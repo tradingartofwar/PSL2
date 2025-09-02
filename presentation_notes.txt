@@ -1,0 +1,21 @@
+notes to include in presentation
+
+I want to point out that my over-arching goal is to feature Synergistic Intelligence (SI).  This is the partnership of humans/AI which optimizes their roles, enabling that human being and AI to achieve was formally impossible for them to achieve alone.   Keep in mind that this process I am going to show you illuminates a "path of innovation" to solve NASA problems, and create immediate value on Earth.
+
+We chose shackleton because there is not the long lunar night issue, and we would be closer to our ice scouting mission.   
+
+I have not completed my prototypes for the edge robot, swarm systems that are scouting for ice.  Here we also identified innovation.  Not, so far, that which creates immediate value on Earth for investors, but it will come with another 3-10 days. This includes Am-241 (power and heat source) built into small rovers (3) which use hydrogen and radar scanners to detect hydrogen, and then determine if it is ice.   That for another time.
+
+We have patents pending on the narrow band lighting, creating immediate Earth value, which is why I focused on this, in this first round.   From this path, emerged the idea that light should be thought of the same way we think of music.  With notes and harmonics and recipes (songs) for optimal human health.  That subject for another time.
+
+This AI Precision Spectrum lighting is managing and regulating plants and humans simultaneously.  We generated the environmental circumstances for this exact location on the moon, and then adjusted the light throughout the day and month to be optimal for plants and humans.  We are using Earth days, since a lunar habitat is mostly likely, and communications and planning will be easier if this is the case - not to mention human schedules.
+
+We have also explore gravity and electromagnetic field issues for human health and plant growth, exploring down to genetic expression and how we might compensate for those issues. This is not included in this first release, and still needs 5-10 days of work to flush out and produce digital prototypes.
+
+What more do we need?  Probably need to cover what is happening, AI roles.. etc etc.   We did significant research on spage agriculture, but that research is not all incorporated in this first release.  this is primarily about AI managed lighting system, focused on providing humans and plant life with the exact sprectrums of light (photons) they need, at the time they need them.
+
+should point out that the system is edge controlled, but also communicates with mission control on Earth, sending back system updates daily.   It is designed to use habitat main computer as backup, if there is an issue.  so the same systems will need to be installed in main computer systems. 
+
+we should touch on AI monitoring and learning about each crew member schedule and wellness and creating unique recipes of light.
+
+we would need to know rooms in the habitat, choose specific plants, know each of the crew members to tune all of this with specific data to create our baseline.

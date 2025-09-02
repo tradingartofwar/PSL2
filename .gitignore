@@ -1,0 +1,33 @@
+# Node / TypeScript
+node_modules/
+dist/
+build/
+.nyc_output/
+coverage/
+
+# Next.js
+.next/
+out/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env & secrets
+.env
+.env.* 
+!.env.example
+!.env.secrets.example
+
+# Docker
+**/.dockerignore
+**/docker-images/
+
+# Data & logs
+/data/
+**/*.log
+
+# Snapshots (optional)
+/snapshots/
