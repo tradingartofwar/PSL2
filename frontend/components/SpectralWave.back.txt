@@ -1,0 +1,128 @@
+"use client";
+import { memo, useMemo } from "react";
+import { motion } from "framer-motion";
+
+type Props = {
+  bands: number[];           // 12 numbers 0..1
+  height?: number;           // px per panel, default 120
+  shimmer?: boolean;         // slow noise translate
+  className?: string;
+};
+
+const W = 700; // viewBox width; scales responsively
+const SAMPLES = 120;
+
+function lerp(a:number,b:number,t:number){ return a + (b-a)*t; }
+function envAt(bands:number[], x:number){
+  const n = Math.max(1, bands.length);
+  const f = x*(n-1); const i = Math.floor(f); const j = Math.min(n-1,i+1); const t=f-i;
+  return lerp(bands[i], bands[j], t); // smooth magnitude envelope
+}
+
+function makePath(h:number, bands:number[], phase:number, amp=0.95){
+  const pts:string[]=[];
+  for(let k=0;k<=SAMPLES;k++){
+    const t = k/SAMPLES;                       // 0..1 across width
+    const env = envAt(bands,t);                // 0..1
+    // multi-frequency blend for rich waveform
+    const yNorm =
+      Math.sin((t*2*Math.PI)+phase)*0.55 +
+      Math.sin((t*6*Math.PI)+phase*1.5)*0.25 +
+      Math.sin((t*10*Math.PI)+phase*2.3)*0.12;
+
+    const y = (h/2) - (yNorm * env * amp * (h/2)); // centerline ± amplitude
+    const x = t*W;
+    pts.push(`${k===0?"M":"L"}${x.toFixed(2)},${y.toFixed(2)}`);
+  }
+  return pts.join(" ");
+}
+
+// gradient stops from our tokens (blue→cyan→green→yellow→orange→red)
+const STOPS = [
+  ["#2F80ED", "0%"],
+  ["#39D7F6", "20%"],
+  ["#43F3A1", "40%"],
+  ["#FFC857", "60%"],
+  ["#FF7A3A", "80%"],
+  ["#FF4B4B", "100%"],
+];
+
+export default memo(function SpectralWave({
+  bands, height=120, shimmer=true, className=""
+}: Props){
+  const h = height;
+
+  const p1 = useMemo(()=>makePath(h, bands, 0.0),[bands,h]);
+  const p2 = useMemo(()=>makePath(h, bands, 1.2, 0.7),[bands,h]);
+  const p3 = useMemo(()=>makePath(h, bands, 2.7, 0.5),[bands,h]);
+
+  return (
+    <div className={`relative rounded-2xl border border-[#1C2933] bg-[#0E141B] overflow-hidden ${className}`}>
+      {/* shimmer noise overlay */}
+      {shimmer && (
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 mix-blend-screen opacity-30"
+          animate={{ backgroundPositionX: ["0%","100%"] }}
+          transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+          style={{
+            backgroundImage: "repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 2px, transparent 2px 4px)"
+          }}
+        />
+      )}
+
+      <svg viewBox={`0 0 ${W} ${h}`} className="w-full h-[120px]">
+        {/* gradient definition */}
+        <defs>
+          <linearGradient id="specGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            {STOPS.map(([c, o],i)=>(
+              <stop key={i} offset={o} stopColor={c}/>
+            ))}
+          </linearGradient>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="7
+" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* three layers for depth */}
+        <motion.path
+          d={p1}
+          fill="none"
+          stroke="url(#specGrad)"
+          strokeWidth={3}
+          style={{ filter: "url(#glow)" }}
+          animate={{ pathOffset: [0, 1] }}
+          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+        />
+        <motion.path
+          d={p2}
+          fill="none"
+          stroke="url(#specGrad)"
+          strokeOpacity={0.7}
+          strokeWidth={3.5}
+          animate={{ pathOffset: [1, 0] }}
+          transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+        />
+        <motion.path
+          d={p3}
+          fill="none"
+          stroke="url(#specGrad)"
+          strokeOpacity={0.4}
+          strokeWidth={1.5}
+          animate={{ pathOffset: [0.5, 1.5] }}
+          transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+        />
+      </svg>
+
+      {/* mode label strip */}
+      <div className="absolute bottom-0 left-0 right-0 text-center text-xs uppercase tracking-widest text-white/70 bg-black/20 backdrop-blur-sm py-1">
+        Spectrum Overview
+      </div>
+    </div>
+  );
+});

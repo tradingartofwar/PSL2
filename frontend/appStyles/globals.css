@@ -1,0 +1,110 @@
+/* Tailwind v4 base */
+@import "tailwindcss";
+
+/* === PSL2 Tokens & Base === */
+:root {
+  /* Dark cockpit defaults */
+  --background: #0A0F14;  /* deep space bg */
+  --foreground: #9BE2F1;  /* bright cyan text */
+
+  /* Panel + lines */
+  --panel: #0E141B;
+  --line:  #1C2933;
+
+  /* Accents */
+  --text-dim:    #6C96A6;
+  --hud-cyan:    #39D7F6;
+  --hud-green:   #43F3A1;
+  --hud-yellow:  #FFC857;
+  --hud-orange:  #FF7A3A;
+  --hud-red:     #FF4B4B;
+
+  /* Glows */
+  --glow-cyan:   rgba(57, 215, 246, 0.35);
+  --glow-orange: rgba(255, 122, 58, 0.35);
+}
+
+/* Keep cockpit dark by default */
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: #0A0F14;
+    --foreground: #9BE2F1;
+  }
+}
+
+/* Optional inline theme tokens */
+@theme inline {
+  --color-bg-deep: var(--background);
+  --color-fg-bright: var(--foreground);
+  --color-bg-panel: var(--panel);
+  --color-line: var(--line);
+}
+
+/* Base element styling */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+/* === Utilities (Tailwind v4 @utility) === */
+/* names must be alphanumeric, lowercase, NO dot */
+
+/* tabular numerals for clocks/HUDs */
+@utility tabularnums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* common card style used across the cockpit */
+@utility pslcard {
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--line), 0 8px 24px rgba(0,0,0,.35);
+}
+
+/* === Plain CSS helpers (not @utility) === */
+/* shimmer uses a pseudo-element, so keep it as normal CSS */
+.pslshimmer {
+  position: relative;
+  overflow: hidden;
+}
+.pslshimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  transform: translateX(-100%);
+  animation: pslShimmer 6s linear infinite;
+}
+@keyframes pslShimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* soft pulse for AI chip */
+@keyframes pslPulse { 0%{opacity:.8} 50%{opacity:1} 100%{opacity:.8} }
+.pslpulse { animation: pslPulse 2s ease-in-out infinite; }
+
+/* blur glow for ring strokes */
+.pslglow { filter: drop-shadow(0 0 8px var(--glow-cyan)); }
+
+/* EDGE micro-pulse used by SpectralWave badge + wrapper */
+@keyframes edgepulse {
+  0%   { transform: scale(1.02); opacity: 0.9; }
+  60%  { transform: scale(1.00); opacity: 1.0; }
+  100% { transform: scale(1.00); opacity: 1.0; }
+}
+
+/* === ThoughtLine helpers === */
+/* softer text-friendly pulse (slower than pslPulse) */
+@keyframes pslsoftpulse {
+  0%, 100% { opacity: 0.92; }
+  50%      { opacity: 1; }
+}
+.thought-pulse { animation: pslsoftpulse 2.8s ease-in-out infinite; }
+
+/* subtle text glows for different tones */
+.thought-glow-green { text-shadow: 0 0 6px rgba(0,255,150,.65), 0 0 12px rgba(0,255,150,.35); }
+.thought-glow-amber { text-shadow: 0 0 6px rgba(255,190,0,.65),  0 0 12px rgba(255,190,0,.35); }
+.thought-glow-red   { text-shadow: 0 0 6px rgba(255,70,70,.65),  0 0 12px rgba(255,70,70,.35); }

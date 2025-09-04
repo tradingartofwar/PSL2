@@ -1,0 +1,184 @@
+// app/page.tsx
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+import { HeaderHUD } from "@/components/HeaderHUD";
+import { CrewSidebar } from "@/components/CrewSidebar";
+import { PlantSidebar } from "@/components/PlantSidebar";
+import SpectralWave from "@/components/SpectralWave";
+import { EnergyHUD } from "@/components/EnergyHUD";
+import { Timeline30 } from "@/components/Timeline30";
+import AIStrategistChip from "@/components/AIStrategistChip";
+import EdgeTicker from "@/components/EdgeTicker"; // ✅ NEW
+
+import { useCockpit } from "@/lib/useCockpit";
+import { toDaySegments } from "@/lib/illumination";
+
+export default function Page() {
+  const {
+    status,
+    effTod,
+    humanBands,
+    plantBands,
+    humanMode,
+    plantMode,
+    illumMask,
+    illumMode,
+
+    // EDGE
+    edge,          // { decisionId, ruleFamily, rationale, expiresAt, ... }
+    edgeActive,    // boolean: active until expiresAt
+    edgePulse,     // boolean: true ~1.2s after new decision
+
+    // ✅ streaming thought items for the ticker
+    ticker,
+  } = useCockpit();
+
+  // --- small helpers / fallbacks
+  const FALLBACK_BANDS = [0.2, 0.35, 0.45, 0.25, 0.15, 0.1, 0.2, 0.4, 0.55, 0.7, 0.9, 0.75];
+  const PLANT_FALLBACK = [0.55, 0.75, 0.62, 0.42, 0.32, 0.42, 0.70, 0.85, 0.96, 1.0, 0.98, 0.80];
+  const hasSignal = (b?: number[]) => Array.isArray(b) && b.some((v) => (v ?? 0) > 1e-3);
+
+  const illumSegs = useMemo(
+    () => (illumMask ? toDaySegments(illumMask, 30) : []),
+    [illumMask]
+  );
+
+  const kw = status?.energyKw ?? 0;
+  const breakdown = status?.energyBreakdown;
+  const mode = status?.energyMode;
+  const humanIntensity = status?.humanIntensityHint;
+
+  // --- Dev: expose latest decision on window for inspection
+  useEffect(() => {
+    // @ts-ignore
+    window.__EDGE = edge ?? null;
+    if (edge?.decisionId) {
+      // eslint-disable-next-line no-console
+      console.log("[EDGE] active:", {
+        decisionId: edge.decisionId,
+        ruleFamily: edge.ruleFamily,
+        rationale: edge.rationale,
+        expiresAt: edge.expiresAt,
+      });
+    }
+  }, [edge?.decisionId]);
+
+  // live countdown for the debug card
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const expiresIn = edge?.expiresAt ? Math.max(0, Math.floor((Date.parse(edge.expiresAt) - now) / 1000)) : 0;
+
+  return (
+    <main className="min-h-screen p-6 bg-[#0A0F14] text-white">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <HeaderHUD />
+
+        <div className="grid grid-cols-12 gap-6">
+          {/* Left: Crew + Plants */}
+          <aside className="col-span-12 md:col-span-3 space-y-6">
+            <CrewSidebar />
+            <PlantSidebar />
+          </aside>
+
+          {/* Center: Spectrum panels (live) */}
+          <section className="col-span-12 md:col-span-6 space-y-6">
+            <SpectralWave
+              title="Circadian Spectrum"
+              mode={humanMode || "WAKE SYNC"}
+              bands={hasSignal(humanBands) ? humanBands! : FALLBACK_BANDS}
+              className="h-[160px]"
+              edge={{
+                active: edgeActive,
+                pulse: edgePulse,
+                rule: edge?.ruleFamily,
+                rationale: edge?.rationale,
+              }}
+            />
+            <SpectralWave
+              title="Growth Spectrum"
+              mode={plantMode || "GROWTH SURGE"}
+              bands={hasSignal(plantBands) ? plantBands! : PLANT_FALLBACK}
+              className="h-[160px]"
+              edge={{
+                active: edgeActive,
+                pulse: edgePulse,
+                rule: edge?.ruleFamily,
+                rationale: edge?.rationale,
+              }}
+            />
+
+            {/* ✅ EDGE DEBUG CARD — keep during build; remove for demo if you want */}
+            <div className="mt-2 rounded-md border border-white/10 bg-white/5 p-3 text-xs leading-5">
+              <div className="mb-1 font-semibold tracking-wide text-white/80">EDGE DEBUG</div>
+              {edge?.decisionId ? (
+                <>
+                  <div>status: <span className={edgeActive ? "text-emerald-300" : "text-zinc-400"}>{edgeActive ? "ACTIVE" : "INACTIVE"}</span></div>
+                  <div>rule: <span className="text-white/90">{edge?.ruleFamily ?? "—"}</span></div>
+                  <div>rationale: <span className="text-white/80">{edge?.rationale ?? "—"}</span></div>
+                  <div>expires in: <span className="text-white/90">{expiresIn}s</span></div>
+                  <div className="mt-2 text-white/60">raw:</div>
+                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px] text-white/70">
+                    {JSON.stringify(edge, null, 2)}
+                  </pre>
+                </>
+              ) : (
+                <div className="text-white/60">No edge decision yet</div>
+              )}
+            </div>
+          </section>
+
+          {/* Right: Energy + AI Strategist + Thought Stream */}
+          <aside className="col-span-12 md:col-span-3 space-y-6">
+            <EnergyHUD
+              kw={kw}
+              maxKw={24}
+              label="Energy HUD"
+              breakdown={breakdown}
+              mode={mode}
+              humanIntensity={humanIntensity}
+            />
+            <div className="flex items-center justify-center">
+              <AIStrategistChip active />
+            </div>
+
+            {/* ✅ Streaming EDGE thoughts */}
+            <EdgeTicker items={ticker} />
+          </aside>
+        </div>
+
+        {/* Timeline + Illumination chip */}
+        <div className="flex items-center justify-between mt-2">
+          <h3 className="text-sm text-zinc-300">Lunar Synodic Cycle</h3>
+          <span className="text-[11px] px-2 py-0.5 rounded-full border border-[#1C2933] bg-[#0E141B]">
+            Illumination: {illumMode ?? "—"}
+          </span>
+        </div>
+
+        <Timeline30
+          day={status?.sol ?? 0}
+          tod={effTod ?? 0}
+          illum={illumSegs}
+          label="CURRENT"
+          totalDays={30}
+          dayLabel="Mission Day"
+          showPercent
+        />
+
+        {/* Big, fixed badge so it’s impossible to miss */}
+        {edgeActive && (
+          <div
+            title={edge?.rationale || "EDGE decision active"}
+            className="fixed bottom-3 right-3 rounded-md px-3 py-1 text-xs bg-black/60 text-white border border-white/10 shadow-[0_0_20px_rgba(0,255,200,0.35)] animate-[edgepulse_1200ms_ease-out_1] z-[9999]"
+          >
+            EDGE ACTIVE — {edge?.ruleFamily ?? "—"}
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
