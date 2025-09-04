@@ -158,17 +158,24 @@ Open: `http://localhost:3000` (or `3001`).
 
 ---
 
-## What You Should See
+## What You Should See (Build 5 baseline)
 
-* **Header HUD:** live local time (ticks with `/status`), **LUNAR DAY** % and days remaining.
-* **Crew Sidebar:** two circular gauges with **sync %** per member (color‑coded: cyan ≥67, yellow 34–66, orange ≤33). Sync computed from their zone’s **human SPD** vs their current phase target.
+* **Header HUD:** live local time (from `/status`), lunar % and days remaining.
+* **Crew Sidebar:** two sync rings, colored by circadian alignment from `/status.crew` + `/schedule/30d`.
+* **Plant Sidebar:** three plant bars (MicroGreens, Sprouts, Algae) with DLI progress, PPFD, overlay status.
 * **Center Spectra:**
+  * **Circadian Spectrum** — 12-band wave for humans, animated + shimmer. EDGE pills appear here only for `wake_boost` / `night_protect`.
+  * **Growth Spectrum** — 12-band wave for plants, styled with blue + red/far-red. EDGE pills appear here for `plant_bias` / `energy_trim`.
+* **Right Column:**
+  * **Energy HUD** — semi-dial with kW breakdown and illumination mode chip.
+  * **EDGE Analytics Chip** — the only chip, pulsing when active.
+  * **Thought Line** — ticker showing the latest decision or observer text (e.g. “Quiet hours — suppressing blue to protect melatonin.”).
+* **Edge Debug Box** — compact summary of the current decision (`status`, `rule`, `rationale`, `expires in`). Hover for full JSON.
+* **Mission Timeline** — 30-day band with CURRENT marker and lunar illumination overlay (green=Sunlit, gray=Dark).
+* **Fixed Badge** — bottom-right global badge: “EDGE ACTIVE — {ruleFamily}”.
 
-  * **Circadian Spectrum** (top): human 12‑band wave, animated + shimmer.
-  * **Growth Spectrum** (bottom): plant 12‑band wave, plant‑emphasized rendering.
-  * With `?fast_tod=1`, both **morph** shape visibly; with `?ai=1`, you’ll see additional deltas.
-* **Right Column:** Energy HUD + **EDGE Analytics** chip (pulsing when active). Optional **Greenhouse Visitor Overlay** card (2/5/10 min, low neutral‑white aisle/task light; plant SPD unchanged).
-* **Mission Timeline:** green progress fill + neon **CURRENT** marker and **Mission Day X / 30**. Beneath the bar: **illumination band** (green lit / gray dark windows) from `/illumination/30d`.
+Open `http://localhost:3001/?fast_tod=1&ai=1` to see waves morph quickly and EDGE decisions apply.
+
 
 ---
 
@@ -264,12 +271,13 @@ Add `?ai=1` to the URL. Watch Network for `/lights/plan`. You can make energy va
 
 ---
 
-## Design Notes (what we’ve encoded)
+## Design Notes (Build 5)
 
-* **EDGE Analytics**: small, explainable deltas (sleep protection, morning blue, energy trims); greenhouse overlay timers that don’t touch plant SPD.
-* **Synodic Month**: 30‑day rolling mask drives mode (Sunlit/PreDark/Dark/ReLight) and biases intensity/blue or PPFD/DLI.
-* **Crew of Two**: fewer conflicts; zone setpoints usually serve both; use task/wearable light for exceptions.
-* **Greenhouse**: independent plant stream; brief visits use low‑power neutral‑white overlay (≤10% power cap) via timer.
+* **EDGE Analytics** now returns `decisionId`, `expiresAt`, and `rationale` and is logged to JSONL.
+* **Illumination Mode** comes from `/illumination/30d` mask, not just demo clock.
+* **Observer Thoughts** stream every few seconds, keeping the Thought Line alive between rule firings.
+* **Global Cooldowns** on each rule family prevent spam decisions.
+* **UI Polish**: single EDGE chip, compact Edge Debug, pulsing Thought Line, clean Timeline meter.
 
 ---
 
