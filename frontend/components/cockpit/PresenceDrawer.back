@@ -1,0 +1,63 @@
+// frontend/components/cockpit/PresenceDrawer.tsx
+"use client";
+
+import { useState } from "react";
+
+type Zone = { id: string; name: string; stream: "human" | "plant"; deck?: number };
+type Crew = { id: string; name: string; zoneId: string };
+
+const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:5000";
+
+export default function PresenceDrawer({
+  crew = [],
+  zones = [],
+}: {
+  crew: Crew[];
+  zones: Zone[];
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const humanZones = zones.filter(z => z.stream === "human");
+
+  async function move(crewId: string, zoneId: string) {
+    try {
+      setBusy(crewId);
+      await fetch(`${API}/presence/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ crewId, zoneId }),
+      });
+    } catch (e) {
+      console.warn("presence/move failed", e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!crew.length || !humanZones.length) return null;
+
+  return (
+    <div className="rounded-md border border-white/10 bg-white/5 p-3">
+      <div className="mb-2 text-xs font-semibold tracking-wide text-white/80">PRESENCE</div>
+      <div className="space-y-2">
+        {crew.map((c) => (
+          <div key={c.id} className="flex items-center gap-2">
+            <div className="min-w-24 text-[12px] text-white/80">{c.name}</div>
+            <select
+              className="flex-1 rounded bg-black/30 px-2 py-1 text-[12px] outline-none ring-1 ring-white/10"
+              value={c.zoneId}
+              onChange={(e) => move(c.id, e.target.value)}
+              disabled={busy === c.id}
+              title="Move crew to zone"
+            >
+              {humanZones.map((z) => (
+                <option key={z.id} value={z.id}>{z.name}</option>
+              ))}
+            </select>
+            {busy === c.id && <span className="text-[11px] text-cyan-300">moving…</span>}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 text-[11px] text-white/50">Updates reflect within ~2s.</div>
+    </div>
+  );
+}

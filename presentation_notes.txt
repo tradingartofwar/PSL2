@@ -19,3 +19,756 @@ should point out that the system is edge controlled, but also communicates with 
 we should touch on AI monitoring and learning about each crew member schedule and wellness and creating unique recipes of light.
 
 we would need to know rooms in the habitat, choose specific plants, know each of the crew members to tune all of this with specific data to create our baseline.
+
+We are using NASA's Artemis Base Camp Design which is for two crew, but accommodates 4 during swap out.  this resulted in X zones - the main idea is to be able to follow the needs of each crew members, and for AI to adjust lighting in each of the zones, depending on where that crew member is.
+
+This was originally designed for a crew of six on Mars.  
+
+DATA FROM FORMER README
+PSL2 — Visual-First Sprint Plan (48 Hours)
+
+
+
+Goal: Deliver a pixel-perfect cockpit dashboard that mirrors the reference image as the first-glance view, with framework stubs for data, AI, and state. Visuals first; functions scaffolded. This aligns with our previously scoped prototype directions and file framework and keeps room for modular complexity (slide-outs, codex cards, strategist panel).
+
+
+
+Window: Sun 5:00 PM → Tue 5:00 PM (48h)
+
+Mantra: Cockpit of Light — where spectrum meets survival.
+
+
+
+Definition of Done (DoD)
+
+
+
+The UI at http://localhost:3000 visually matches the reference at first glance (header, crew gauges, plant bars, spectrum panels, energy HUD, strategist chip, 30-day timeline).
+
+
+
+Smooth cockpit animations (glow, pulsing, subtle gauge sweeps) in place; no jank.
+
+
+
+Slide-out panels exist as stubs for future complexity.
+
+
+
+Backend/API stubs return realistic mock data and are wired to UI (no 404s).
+
+
+
+State memory scaffold exists (events JSONL).
+
+
+
+README includes one-command dev instructions.
+
+
+
+(These map to the capabilities and polish we evolved through v1.6–v1.9.2 in PSL1: animations, status chip, lunar HUD, strategist dials, spectral waveforms).
+
+
+
+Team \& Roles (PSL2)
+
+
+
+Prism (Riley) — Frontend: cockpit shell, SpectralWave, HUDs, Timeline, slide-out stubs.
+
+
+
+Lumen (Mira) — Design/UX: tokens (color/typography/gradients), glow \& motion timings.
+
+
+
+Forge (Kai) — Backend: Fastify stubs /status, /time/lunar, /history, /lights/plan (mock).
+
+
+
+Aurora (Nova) — AI Logic: mock planner + /explain summary now; future swap to gpt-4o-mini.
+
+
+
+Mirror (Jules) — QA: visual parity checklist + snapshots.
+
+
+
+Polaris — Vision alignment check Mon 5 PM (“North Star Check”).
+
+
+
+Pulse / Flare — Improvements \& urgency cadence.
+
+
+
+High-Level UI (Visual First)
+
+
+
+Header HUD: Base title, Lunar HUD (day/night %, days remaining), Time (tabular digits).
+
+
+
+Left Stack: Crew Status (3 neon ring gauges), Plant Zones (3 thin bars).
+
+
+
+Center Stack: Spectrum Overview (top \& bottom panels), mode label (e.g., “Active: WAKE SYNC”).
+
+
+
+Right Stack: Energy HUD (semi-circular KW dial), AI Strategist chip.
+
+
+
+Footer: 30-day timeline with “YOU ARE HERE” marker.
+
+
+
+These match the “first-glance cockpit” you approved and our earlier UI directions (waveform sculpting, mission sequencer, strategist).
+
+
+
+Repository Tree (Markdown, matches your current layout + adds essentials)
+
+C:\\psl2
+
+├─ frontend\\                         # Next.js 14 (App Router) + Tailwind + shadcn/ui + Framer Motion
+
+│  ├─ app\\
+
+│  │  ├─ layout.tsx
+
+│  │  └─ page.tsx                    # Cockpit shell (default first-glance view)
+
+│  ├─ components\\
+
+│  │  ├─ SpectralWave.tsx
+
+│  │  ├─ EnergyHUD.tsx
+
+│  │  ├─ LunarHUD.tsx
+
+│  │  ├─ StatusChip.tsx
+
+│  │  ├─ CrewSidebar.tsx
+
+│  │  ├─ PlantSidebar.tsx
+
+│  │  ├─ Timeline30.tsx
+
+│  │  └─ Slideouts\\
+
+│  │     ├─ CrewDetail.tsx          # stub (future)
+
+│  │     └─ PlantDetail.tsx         # stub (future)
+
+│  ├─ lib\\
+
+│  │  ├─ state\\useCockpit.ts         # zustand store (visual data + API wiring)
+
+│  │  ├─ api\\client.ts               # fetch helpers (to backend stubs)
+
+│  │  └─ utils\\format.ts
+
+│  ├─ appStyles\\globals.css
+
+│  └─ public\\                        # icons, fonts
+
+│
+
+├─ backend\\                          # Fastify + TypeScript (stubs now)
+
+│  ├─ src\\
+
+│  │  ├─ server.ts
+
+│  │  ├─ routes\\
+
+│  │  │  ├─ status.ts                # GET /status   → cockpit payload
+
+│  │  │  ├─ lunar.ts                 # GET /time/lunar
+
+│  │  │  ├─ history.ts               # GET/POST /history (JSONL)
+
+│  │  │  ├─ plan.ts                  # POST /lights/plan (mock AI planner)
+
+│  │  │  └─ explain.ts               # POST /explain (mock summary)
+
+│  │  ├─ services\\
+
+│  │  │  ├─ planner.ts               # returns bands\[12], intensity, rationale
+
+│  │  │  ├─ dataset.ts               # loads from ../data (top-level) or local
+
+│  │  │  └─ logger.ts                # append events JSONL
+
+│  │  └─ utils\\time.ts
+
+│  ├─ data\\                          # (present now; can later point to ..\\data)
+
+│  │  └─ mock.json                   # fallback sample payload(s)
+
+│  └─ tsconfig.json
+
+│
+
+├─ config\\                           # tokens, scenarios, zones
+
+│  ├─ tokens.json                    # design/brand tokens (colors, radii, shadows)
+
+│  ├─ scenarios\\lunar\_night\_demo.json
+
+│  └─ zones\\habitat\_a.json
+
+│
+
+├─ data\\                             # canonical data (preferred for dev)
+
+│  ├─ mock\\                          # Shekelton sample feeds
+
+│  │  ├─ daily.json                  # 30-day daily snapshots
+
+│  │  └─ now.json                    # current cockpit payload
+
+│  ├─ runs\\                          # runtime event logs (JSONL)
+
+│  └─ snapshots\\                     # QA screenshots
+
+│
+
+├─ docker\\                           # optional (day-2)
+
+│  ├─ docker-compose.yml
+
+│  ├─ frontend.Dockerfile
+
+│  └─ backend.Dockerfile
+
+│
+
+├─ snapshots\\                        # (alternate place for QA; Mirror can choose)
+
+├─ README.md
+
+├─ .gitignore
+
+└─ up.ps1                            # one-command dev (Windows)
+
+
+
+
+
+Note: You currently have both C:\\psl2\\data and C:\\psl2\\backend\\data. That’s okay for now. In dev, prefer reading/writing to top-level C:\\psl2\\data\\… and keep backend\\data\\mock.json as a local fallback.
+
+
+
+This structure is a trimmed, visual-first adaptation of our full framework, keeping the same philosophy (frontend components, backend routes, logs/history, configs, Docker).
+
+
+
+Component Specs (Props \& Behaviors)
+
+
+
+<HeaderHUD />
+
+Props: { time: string, lunar: { pct:number, daysRemaining:number } }
+
+Behavior: time ticks; lunar values from /time/lunar.
+
+
+
+<CrewStatus />
+
+Props: { crew: Array<{name:string, sync:number, color:"cyan"|"yellow"|"orange"}> }
+
+3 neon ring gauges; percent labels inside.
+
+
+
+<PlantZones />
+
+Props: { zones: Array<{label:string, pct:number, color:string}> }
+
+Thin gradient bars; label left, % right.
+
+
+
+<SpectrumOverview />
+
+Props: { mode:string, bands:number\[] } (12 bands)
+
+Top+bottom panels; gentle shimmer; label “Active: {mode}”.
+
+
+
+<EnergyHUD />
+
+Props: { kw:number }
+
+Semi-circular gauge; center numeric (e.g., 16.2 KW).
+
+
+
+<AIStrategist />
+
+Props: { active:boolean }
+
+Avatar chip; pulsing ring when active.
+
+
+
+<Timeline30 />
+
+Props: { day:number, bands:Array<{start:number,end:number,color:string}> }
+
+30-day gradient bar with “YOU ARE HERE” marker.
+
+
+
+Slide-outs (stubs this sprint):
+
+CrewDetail, PlantDetail, bottom ActionJournal drawer (future codex cards, strategist dials).
+
+
+
+Backend Endpoints (stubs now, expandable later)
+
+
+
+GET /status → cockpit payload (time/lunar/crew/plants/spectrum/energy/timeline).
+
+
+
+GET /time/lunar → { pct:72, daysRemaining:19 } (mocked from dataset).
+
+
+
+POST /lights/plan → { bands:\[12], intensity, rationale } (mock planner now; GPT later).
+
+
+
+GET|POST /history → append/fetch events JSONL.
+
+
+
+POST /explain → 1–2 paragraph summary from last N events (mock now).
+
+
+
+These mirror the PSL1 contract so we can later turn on the full plan/critic/revise/simulate flow if desired, and reflect enhancements we made (lunar context, strategist dials, spectral wave).
+
+
+
+Sample Cockpit Payload (for /status)
+
+{
+
+&nbsp; "time": "14:47",
+
+&nbsp; "lunar": { "pct": 72, "daysRemaining": 19 },
+
+&nbsp; "crew": \[
+
+&nbsp;   { "name": "A", "sync": 0, "color": "cyan" },
+
+&nbsp;   { "name": "B", "sync": 6, "color": "yellow" },
+
+&nbsp;   { "name": "C", "sync": 89, "color": "orange" }
+
+&nbsp; ],
+
+&nbsp; "plants": \[
+
+&nbsp;   { "label": "Lettuce", "pct": 8, "color": "#35E1F2" },
+
+&nbsp;   { "label": "Tomatoes", "pct": 89, "color": "#FF7A3A" },
+
+&nbsp;   { "label": "Algae", "pct": 80, "color": "#35E1F2" }
+
+&nbsp; ],
+
+&nbsp; "spectrum": { "mode": "WAKE SYNC", "bands": \[0.2,0.35,0.45,0.25,0.15,0.1,0.2,0.4,0.55,0.7,0.9,0.75] },
+
+&nbsp; "energy": { "kw": 16.2 },
+
+&nbsp; "timeline": { "day": 12, "bands": \[] }
+
+}
+
+
+
+Design Tokens (starter)
+
+
+
+Typography: Orbitron (700) for HUDs; Inter (400/600) for body; tabular digits for time.
+
+
+
+Radii: card 16px; inner 12px.
+
+
+
+Key Colors:
+
+\#0A0F14 bg, #0E141B panel, #1C2933 line, cyan #39D7F6, green #43F3A1, yellow #FFC857, orange #FF7A3A, red #FF4B4B.
+
+
+
+Spectrum Gradient: blue→cyan→green→yellow→orange→red.
+
+
+
+Effects: Thin border line + soft outer shadow; inner glow on active; subtle shimmer.
+
+
+
+(These match the cockpit aesthetic upgrades we landed in v1.9–v1.9.2).
+
+
+
+Animations (Framer Motion)
+
+
+
+Gauge sweep: 600ms easeOut.
+
+
+
+Strategist chip: 2s pulse loop.
+
+
+
+Spectral shimmer: slow 6s noise translate.
+
+
+
+StatusChip: 3s breathing opacity.
+
+
+
+Timeline pointer: gentle bounce on day change.
+
+
+
+48-Hour Milestones
+
+
+
+Sun 5–10 PM
+
+
+
+Prism: Next.js app, layout grid, header + panels skeleton.
+
+
+
+Lumen: tokens (colors/gradients/typography) committed; motion timings.
+
+
+
+Forge: Fastify project; GET /status → sample payload.
+
+
+
+Mon 8 AM–12 PM
+
+
+
+Prism: Crew/Plant modules + top Spectrum panel.
+
+
+
+Lumen: Energy HUD dial geometry; glow tuning.
+
+
+
+Forge: /time/lunar, /history append.
+
+
+
+Mon 1–5 PM
+
+
+
+Prism: Footer Timeline30; bottom Spectrum panel; StatusChip.
+
+
+
+Aurora: mock /lights/plan + /explain.
+
+
+
+Mirror: first visual parity pass; list diffs.
+
+
+
+Polaris: North Star Check 5 PM.
+
+
+
+Tue 8 AM–1 PM
+
+
+
+Prism: polish; micro-animations; 1366–1920 widths.
+
+
+
+Forge: wire UI to /status; events on user actions.
+
+
+
+Tue 1–5 PM
+
+
+
+Mirror: acceptance checklist; snapshots.
+
+
+
+Prism/Lumen: final nits; deliver.
+
+
+
+Acceptance Checklist (Mirror)
+
+
+
+&nbsp;Header placements \& weights match reference.
+
+
+
+&nbsp;Time numerals use tabular digits; size ratio ≥ 56px.
+
+
+
+&nbsp;Cards: radius 16px; border #1C2933; shadows per tokens.
+
+
+
+&nbsp;Crew gauges: ring thickness, glow, % labels.
+
+
+
+&nbsp;Plant bars: thin gradient lines, label spacing exact.
+
+
+
+&nbsp;Spectrum panels (top + bottom) peaks \& label copy match.
+
+
+
+&nbsp;Energy HUD: semi-dial geometry + “16.2 KW” style.
+
+
+
+&nbsp;AI Strategist chip: pulse alignment.
+
+
+
+&nbsp;Timeline: 1..30 ticks, “YOU ARE HERE” marker, gradient flow.
+
+
+
+&nbsp;60fps feel; no visible layout shift.
+
+
+
+One-Command Dev (Windows PowerShell)
+
+
+
+up.ps1 (place at repo root):
+
+
+
+\# Frontend
+
+if (-not (Test-Path "frontend")) { Write-Host "Missing frontend/"; exit 1 }
+
+Start-Process powershell -ArgumentList 'cd frontend; pnpm i; pnpm dev' -NoNewWindow
+
+
+
+\# Backend
+
+if (-not (Test-Path "backend")) { Write-Host "Missing backend/"; exit 1 }
+
+Start-Process powershell -ArgumentList 'cd backend; pnpm i; pnpm dlx nodemon --watch src --exec "pnpm dlx ts-node src/server.ts"' -NoNewWindow
+
+
+
+
+
+.gitignore essentials:
+
+
+
+node\_modules/
+
+.next/
+
+dist/
+
+coverage/
+
+.env
+
+data/runs/
+
+snapshots/
+
+
+
+Notes \& Future-Ready Hooks
+
+
+
+Keep PSL2 visual-first, but the endpoint contract mirrors PSL1 so we can add plan/critic/revise/simulate later without reshuffling folders.
+
+
+
+The aesthetic (neon gradients, glow, pulsing HUDs, strategist dials, lunar HUD, spectral waveforms) matches our v1.9.x polish track.
+
+
+
+Slide-outs will host Light Codex cards, waveform editor, and mission sequencer after the 48-hour sprint.
+
+
+UI DETAILS
+
+CREW STATUS
+Here’s how the Crew Status works and what those circle values (0%, 6%, 89%) mean:
+
+What the circles represent
+
+Each circle = one crewmember.
+
+The number is that person’s circadian sync % — how closely their current/light plan aligns with their target sleep–wake profile right now.
+
+~0–33% (orange): misaligned (expect fatigue, low alertness).
+
+~34–66% (yellow): drifting, watch closely.
+
+~67–100% (cyan): in sync / performant.
+
+Visually:
+
+A neon ring shows the % (sweep from 0→100).
+
+Color maps to the tiers above.
+
+A soft pulse indicates the gauge is “alive” and updating.
+
+Where the values come from
+
+Under the hood we compute each crew member’s sync as a score from the base human 12-band SPD for the current time (+ any EDGE overrides) compared to their target profile for that phase (SLEEP, WAKE SYNC, WORK, WIND DOWN). Think of it as:
+
+sync% = 100 × (1 – normalized error between actual SPD and target SPD)
+
+
+Signals we can fold in:
+
+Time-of-day phase (SLEEP/WAKE/WORK/WIND) from the 30-day schedule.
+
+Melanopic/CS weighting (blue/cyan bands matter more for alertness).
+
+Personal drift (if a crew member shifted sleep by 90 min, target shifts too).
+
+Recent exposure history (penalize bright blue late at “night”, reward warm).
+
+How it updates
+
+Every /status poll (~5s), the UI:
+
+Samples the current SPD for humans from the 30-day schedule (and applies EDGE deltas if active).
+
+Recomputes each crew member’s sync% and updates the ring + label.
+
+If energy is constrained (or an EVA is coming), EDGE may nudge bands; the next poll will reflect that in the circles (e.g., night: blue suppressed → higher “sleep protection” → higher sync for those sleeping).
+
+Quick wiring checklist (so it matches what you’re seeing)
+
+/status returns a crew array with name, sync, and a status color; the sidebar/gauges read from this.
+
+Colors:
+
+>=67% → cyan
+
+34–66% → yellow
+
+<=33% → orange
+
+Gauge label shows the integer % inside the ring.
+
+(Optional) Clicking a circle opens CrewDetail with: last sleep window, next target phase, sleep debt, and one-tap actions (“dim late blue”, “boost morning blue”).
+
+Why your sample shows 0%, 6%, 89%
+
+Those are example states you’ll often see:
+
+0% (orange): likely awake under the wrong spectrum during a sleep phase.
+
+6% (yellow/orange): starting to drift; fix with small spectrum tweaks.
+
+89% (cyan): on target for the current phase.
+
+If you want, I can drop in a tiny computeCrewSync() helper now (weights blue/cyan bands heavily at WAKE/WORK and penalizes them at SLEEP/WIND) and wire it so the rings are calculated from your live spectra rather than static numbers.
+
+
+BASE STATION (using NASA's design - 3 deck + greenhouse)
+
+What NASA is actually designing
+
+Artemis Base Camp core elements: a fixed Surface Habitat (SH), an unpressurized LTV, a pressurized rover, plus power and ISRU systems (water/oxygen from regolith/ice). The SH anchors the base; LTV/PR extend range. 
+NASA Technical Reports Server
+
+Crew size & durations (reference SH): supports 2 crew for ~30 days, can host up to 4 during swap-outs/safe-haven; goals include evolving to 4 crew for up to 60 days. SH is self-sufficient (comms, power/thermal, ECLSS with water/urine/CO₂ processing and O₂ generation). 
+NASA Technical Reports Server
++1
+
+Structure & decks (reference layout): a hybrid inflatable—lower metallic deck + two inflatable decks (~6.5 m outer diameter; ~7.8 m tall deployed). Lower deck includes EVA ingress/egress with a two-chamber airlock and suit maintenance; upper decks hold living/work systems. 
+NASA Technical Reports Server
++1
+
+Named spaces from the internal layout (examples):
+
+Airlock / suit maintenance (lower deck) with EVA computer station. 
+NASA Technical Reports Server
+
+Maintenance & geology workstations (lower deck). 
+NASA Technical Reports Server
+
+Biology workstation + racks for water/urine/brine processors (second deck). 
+NASA Technical Reports Server
+
+Two private crew quarters, medical station (third deck), plus perimeter storage. 
+NASA Technical Reports Server
+
+EVA ops limits (design ground rules): EVA time per crew ≤ 24 hr/week; max one 2-person, 8-hour EVA per 24 hr; access is via airlock / suitlock / hybrid suitport-airlock (trade study). 
+NASA Technical Reports Server
++1
+
+South-pole operating context: chosen for long daylight with short darkness intervals (easier power/thermal), unlike equatorial Apollo sites. 
+NASA Technical Reports Server
+
+Where the greenhouse fits
+
+NASA’s reference SH includes a biology workstation, but a full food/air/water “greenhouse” is typically a separate module. The University of Arizona Prototype Lunar Greenhouse (NASA-funded) demonstrates a bioregenerative life support approach in an ~18-ft (≈5.5 m) long, ~7-ft dia chamber (hydroponics; air/water recycling). It’s a strong analog for a dedicated Greenhouse Zone connected to the SH
+
+Right now, we are all marveling at AI.  The future is not going to be like that.   AI will fade into the background, very much like electricity or the internet.   But for now, since we are all marveling, I have included "edge" this and "edge" that.   And not just for that reason.  For now, we still have to build these things.  We are in a transition window, where AI needs humans as much as we need AI.
+
+If we want vitamin-D in PSL later (optional module)
+
+Hardware: narrow-band UV-B emitters (tuned for efficacy), eye shields, interlocks, dosimetry.
+
+Protocol: brief sessions 2–3×/week with ~20–25% body surface exposed (e.g., forearms + lower legs/upper back), never to erythema; block ocular exposure.
+
+Monitoring: periodic 25-OH-D blood tests + fallback D₃ supplementation per NASA-style standards.
+
+UI: a separate “Vit-D Session” tile with dose countdown + safety lockouts (distinct from mEDI).  I think the long term solution is to integrate skin explore to more light during exercise.  8-12 minuts with clothing planned for skin exposure.

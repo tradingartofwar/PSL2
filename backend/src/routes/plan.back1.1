@@ -1,0 +1,247 @@
+// backend/src/routes/plan.ts
+import { randomUUID } from "crypto";
+import { promises as fs } from "fs";
+import { readFileSync, existsSync } from "fs";
+import { join, resolve } from "path";
+
+type EdgeDecision = {
+  decisionId: string;
+  createdAt: string;
+  expiresAt: string;
+  ruleFamily: "night_protect" | "wake_boost" | "energy_trim" | "plant_bias";
+  humanDelta: number[];  // 12
+  plantDelta: number[];  // 12
+  rationale: string;
+  context: { sol: number; tod: number; energyKw: number; mode?: string };
+  applied: boolean;
+};
+
+// ===== Illumination helpers =====
+type IllumSample = { t?: string; lit: 0 | 1 };
+type IllumMask = { stepHours: number; samples: IllumSample[] };
+
+const MASK_PATH = resolve(process.cwd(), "data/illum/shackleton_30d.json");
+let MASK: IllumMask | null = null;
+
+function getMask(): IllumMask | null {
+  if (MASK) return MASK;
+  if (existsSync(MASK_PATH)) {
+    MASK = JSON.parse(readFileSync(MASK_PATH, "utf-8")) as IllumMask;
+    return MASK;
+  }
+  return null;
+}
+
+function darkWindowsForDay(mask: IllumMask, sol: number) {
+  const step = mask.stepHours || 1;
+  const stepsPerSol = Math.round(24 / step);
+  const start = sol * stepsPerSol;
+  const end = start + stepsPerSol;
+  const day = mask.samples.slice(start, end);
+
+  const wins: { startTod: number; endTod: number }[] = [];
+  let i = 0;
+  while (i < day.length) {
+    if (day[i].lit === 0) {
+      const s = i;
+      while (i < day.length && day[i].lit === 0) i++;
+      const e = i;
+      wins.push({ startTod: (s * step) / 24, endTod: (e * step) / 24 });
+    } else i++;
+  }
+  return wins;
+}
+
+function minutesUntilNextDark(tod: number, wins: { startTod: number; endTod: number }[]) {
+  if (wins.some(w => tod >= w.startTod && tod < w.endTod)) return 0;
+  const ahead = wins.map(w => w.startTod).filter(s => s > tod).sort((a,b)=>a-b);
+  if (!ahead.length) return null;
+  const deltaDays = ahead[0] - tod;
+  return Math.max(0, Math.round(deltaDays * 24 * 60));
+}
+
+type IllumMode = "Sunlit" | "PreDark" | "Dark" | "ReLight";
+function modeFromWindows(tod: number, wins: { startTod: number; endTod: number }[]): IllumMode {
+  const inDark = wins.some(w => tod >= w.startTod && tod < w.endTod);
+  if (inDark) return "Dark";
+  const next = wins.map(w => w.startTod).filter(s => s > tod).sort((a,b)=>a-b)[0];
+  const prevEnd = wins.map(w => w.endTod).filter(e => e <= tod).sort((a,b)=>b-a)[0];
+  if (typeof next === "number" && (next - tod) * 24 <= 0.75) return "PreDark"; // ≤45 min
+  if (typeof prevEnd === "number" && (tod - prevEnd) * 24 <= 1.0) return "ReLight"; // ≤60 min after dark
+  return "Sunlit";
+}
+
+// ===== Decision state / cadence =====
+const MAX_DELTA = 0.12;     // safety cap
+const TTL_MS   = 60_000;    // refresh roughly each minute for visible stability
+const COOLDOWN_BASE_MS = 120_000;
+const COOLDOWN_DEMO_MS = 30_000;
+
+const lastFired = new Map<string, number>(); // per-rule last emit time
+let lastRule: EdgeDecision["ruleFamily"] | null = null;
+let lastMode: IllumMode | null = null;
+
+function clamp(v: number, lo = -MAX_DELTA, hi = MAX_DELTA) {
+  return Math.max(lo, Math.min(hi, v));
+}
+function cooled(rule: string, demo: boolean) {
+  const now = Date.now();
+  const t = lastFired.get(rule) ?? 0;
+  const COOL = demo ? COOLDOWN_DEMO_MS : COOLDOWN_BASE_MS;
+  return now - t >= COOL;
+}
+function canKeepAlive(rule: string, mode: IllumMode) {
+  const now = Date.now();
+  const last = lastFired.get(rule) ?? 0;
+  const refreshDue = now - last >= Math.floor(TTL_MS * 0.66);
+  return lastRule === (rule as any) && lastMode === mode && refreshDue;
+}
+
+async function appendJsonl(type: string, payload: unknown) {
+  const dataDir = process.env.DATA_DIR || "/app/data";
+  const runId = process.env.RUN_ID || "dev";
+  const runDir = join(dataDir, "runs", runId);
+  await fs.mkdir(runDir, { recursive: true });
+  await fs.appendFile(join(runDir, "events.jsonl"), JSON.stringify({ type, ...payload }) + "\n", "utf8");
+}
+
+export default async function planRoutes(fastify: any) {
+  fastify.post("/lights/plan", async (req: any) => {
+    const body = (req.body ?? {}) as { sol?: number; tod?: number; energyKw?: number; demo?: boolean; force?: boolean; rule?: EdgeDecision["ruleFamily"] };
+    const headers = (req.headers ?? {}) as Record<string, string | undefined>;
+    const isDemo = !!body.demo || headers["x-psl-demo"] === "1";
+    const tod = Number(body.tod ?? 0);   // 0..1
+    const sol = Number(body.sol ?? 0) % 30;
+    const energyKw = Number(body.energyKw ?? 12);
+    const N = 12;
+
+    // ---------- FAST-PATH (demo / force) ----------
+    if (body.force || body.demo) {
+      const now = new Date();
+      const decision: EdgeDecision = {
+        decisionId: randomUUID(),
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + TTL_MS).toISOString(),
+        ruleFamily: (body.rule && ["night_protect","wake_boost","energy_trim","plant_bias"].includes(body.rule)) ? body.rule : "plant_bias",
+        humanDelta: Array(N).fill(0),
+        plantDelta: [0,0,0,0,0,0, 0.03,0.05,0.07,0.09,0.07,0.04],
+        rationale: body.demo ? "Demo/prime response for immediate UI readiness." : "Forced quick decision for UI readiness.",
+        context: { sol, tod, energyKw, mode: "Sunlit" },
+        applied: true,
+      };
+      await appendJsonl("edge_decision_prime", decision);
+      return decision;
+    }
+
+    // ---------- Derive illumination mode from mask ----------
+    const mask = getMask();
+    const wins = mask ? darkWindowsForDay(mask, sol) : [];
+    const mode: IllumMode = mask ? modeFromWindows(tod, wins) :
+      (tod < 0.15 || tod > 0.85) ? "Dark" :
+      (tod >= 0.20 && tod <= 0.28) ? "ReLight" :
+      (tod >= 0.80 && tod <= 0.85) ? "PreDark" : "Sunlit";
+
+    // ---------- Choose rule by mode (with energy guard) ----------
+    let ruleFamily: EdgeDecision["ruleFamily"] | null = null;
+    let rationale = "";
+    const humanDelta = Array(N).fill(0);
+    const plantDelta = Array(N).fill(0);
+
+    const ignoreCooldown = !!(lastMode && lastMode !== mode);
+
+    if (mode === "Dark") {
+      if (energyKw > 18 && (ignoreCooldown || canKeepAlive("energy_trim", mode) || cooled("energy_trim", isDemo))) {
+        ruleFamily = "energy_trim";
+        for (let i = 0; i < N; i++) plantDelta[i] = clamp(-0.10);
+        rationale = "Dark window: trimming plant power to hold reserves.";
+      } else if (ignoreCooldown || canKeepAlive("night_protect", mode) || cooled("night_protect", isDemo)) {
+        ruleFamily = "night_protect";
+        humanDelta[2]  = clamp(-0.12);
+        humanDelta[3]  = clamp(-0.10);
+        humanDelta[4]  = clamp(-0.06);
+        humanDelta[9]  = clamp(+0.05);
+        humanDelta[10] = clamp(+0.06);
+        humanDelta[11] = clamp(+0.08);
+        rationale = "Dark window: reduce short wavelengths to protect melatonin.";
+      }
+    } else if (mode === "PreDark") {
+      if (ignoreCooldown || canKeepAlive("plant_bias", mode) || cooled("plant_bias", isDemo)) {
+        ruleFamily = "plant_bias";
+        plantDelta[9]  = clamp(+0.06);
+        plantDelta[11] = clamp(+0.08);
+        rationale = "Pre-Dark: banking DLI with red/far-red bias.";
+      }
+    } else if (mode === "ReLight") {
+      if (ignoreCooldown || canKeepAlive("plant_bias", mode) || cooled("plant_bias", isDemo)) {
+        ruleFamily = "plant_bias";
+        plantDelta[7]  = clamp(+0.03);
+        plantDelta[8]  = clamp(+0.05);
+        plantDelta[9]  = clamp(+0.07);
+        rationale = "Re-Light: canopy catch-up after dark window.";
+      }
+    } else {
+      // Sunlit baseline: optional morning boost by TOD
+      if (tod >= 0.20 && tod <= 0.40 && (ignoreCooldown || canKeepAlive("wake_boost", mode) || cooled("wake_boost", isDemo))) {
+        ruleFamily = "wake_boost";
+        humanDelta[2] = clamp(+0.10);
+        humanDelta[3] = clamp(+0.08);
+        humanDelta[4] = clamp(+0.05);
+        humanDelta[9] = clamp(-0.03);
+        humanDelta[10] = clamp(-0.03);
+        rationale = "Morning: boosting blue to accelerate circadian alignment.";
+      } else if (energyKw < 10 && (ignoreCooldown || canKeepAlive("plant_bias", mode) || cooled("plant_bias", isDemo))) {
+        ruleFamily = "plant_bias";
+        plantDelta[9]  = clamp(+0.06);
+        plantDelta[11] = clamp(+0.08);
+        rationale = "Low load: bias red/far-red for efficient growth.";
+      }
+    }
+
+    // In demo, if nothing fired, still emit a gentle mode-appropriate decision so UI isn't empty
+    if (!ruleFamily && isDemo) {
+      if (mode === "PreDark") {
+        ruleFamily = "plant_bias";
+        plantDelta[9]  = clamp(+0.05);
+        plantDelta[11] = clamp(+0.06);
+        rationale = "Pre-Dark (demo): banking DLI softly.";
+      } else if (mode === "Dark") {
+        ruleFamily = "night_protect";
+        humanDelta[2]  = clamp(-0.10);
+        humanDelta[3]  = clamp(-0.08);
+        humanDelta[4]  = clamp(-0.05);
+        rationale = "Dark window (demo): quieting short wavelengths.";
+      } else if (mode === "ReLight") {
+        ruleFamily = "plant_bias";
+        plantDelta[8]  = clamp(+0.04);
+        plantDelta[9]  = clamp(+0.06);
+        rationale = "Re-Light (demo): gentle catch-up.";
+      }
+    }
+
+    // If still no rule, keep UI calm
+    if (!ruleFamily) {
+      lastMode = mode;
+      return { applied: false };
+    }
+
+    const now = new Date();
+    const decision: EdgeDecision = {
+      decisionId: randomUUID(),
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + TTL_MS).toISOString(),
+      ruleFamily,
+      humanDelta,
+      plantDelta,
+      rationale,
+      context: { sol, tod, energyKw, mode },
+      applied: true,
+    };
+
+    lastFired.set(ruleFamily, Date.now());
+    lastMode = mode;
+    lastRule = ruleFamily;
+
+    await appendJsonl("edge_decision", decision);
+    return decision;
+  });
+}

@@ -1,0 +1,9 @@
+{
+  "targets": {
+    "morning_medi_lux": 250,
+    "day_medi_lux": 250,
+    "evening_cap_medi_lux": 50,
+    "sleep_cap_medi_lux": 10
+  },
+  "durations_min": { "morning": 60, "day": 120, "evening": 120 }
+}

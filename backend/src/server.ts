@@ -6,7 +6,8 @@ import statusRoutes from "./routes/status";
 import scheduleRoutes from "./routes/schedule";
 import planRoutes from "./routes/plan";
 import illuminationRoutes from "./routes/illumination";
-import debugRoutes from "./routes/debug"; // ✅ NEW
+import debugRoutes from "./routes/debug";
+import presenceRoutes from "./routes/presence"; // ✅ NEW
 
 // Load env (optional if you already load elsewhere)
 import "dotenv/config";
@@ -27,12 +28,13 @@ async function start() {
   // CORS for local dev (adjust for prod as needed)
   await app.register(cors, { origin: true });
 
-  // Routes
+  // If your illuminationRoutes decorates illumMask, it will be visible to /status
+  await app.register(illuminationRoutes as any);
+  await app.register(presenceRoutes as any);   // ✅ presence overlay
   await app.register(statusRoutes as any);
   await app.register(scheduleRoutes as any);
   await app.register(planRoutes as any);
-  await app.register(illuminationRoutes as any);
-  await app.register(debugRoutes as any); // ✅ expose /debug/edge
+  await app.register(debugRoutes as any);      // ✅ expose /debug/edge
 
   // Health
   app.get("/health", async () => ({ ok: true }));
@@ -61,6 +63,7 @@ async function start() {
         "/schedule/30d",
         "/illumination/30d",
         "/lights/plan",
+        "/presence/move",     // ✅ NEW
         "/debug/edge?limit=50",
       ],
     },

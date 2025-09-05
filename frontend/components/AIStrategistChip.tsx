@@ -3,15 +3,15 @@ import { motion } from "framer-motion";
 
 type Props = {
   active?: boolean;
-  label?: string;      // main label (default: EDGE Analytics)
+  label?: string;      // main label (default: Edge Decisions)
   sublabel?: string;   // small line under main label
   className?: string;
 };
 
 export default function AIStrategistChip({
   active = true,
-  label = "EDGE Analytics",
-  sublabel = "Adaptive Light Strategist",
+  label = "Edge Decisions",
+  sublabel = "Stable, explainable choices",
   className = "",
 }: Props) {
   return (
@@ -19,7 +19,7 @@ export default function AIStrategistChip({
       className={`relative inline-flex items-center gap-3 px-3 py-2 rounded-full border border-[#1C2933] bg-[#0E141B] ${className}`}
       aria-live="polite"
     >
-      {/* LED + pulsing glow (same behavior as your original) */}
+      {/* LED + pulsing glow */}
       <div className="relative">
         <motion.span
           className="absolute inset-0 rounded-full"
@@ -36,7 +36,7 @@ export default function AIStrategistChip({
         />
       </div>
 
-      {/* Text block: main label + small sublabel */}
+      {/* Text block */}
       <div className="leading-tight">
         <div className="text-xs uppercase tracking-wider text-white/85">{label}</div>
         <div className="text-[10px] tracking-wider text-white/55">{sublabel}</div>

@@ -10,6 +10,8 @@ import {
   modeFromWindows,
   darkWindowsForDay,
   minutesUntilNextDark,
+  // add this helper for demo DLI lift
+  // (if not exported in your illum module, you can inline a simple version)
 } from "./illumination";
 import { mediFromBands, type HumanTargets } from "./humanDose";
 
@@ -55,9 +57,6 @@ type Status = {
   zones?: Zone[];
   crew?: Crew[];
   plantZones?: PlantZone[];
-  // Build 7 fields:
-  humanTargets?: HumanTargets;
-  humanDose?: { mediLux?: number };
 };
 
 // ---------- EDGE decision (from /lights/plan) ----------
@@ -150,8 +149,6 @@ export function useCockpit() {
             zones: d.zones,
             crew: d.crew,
             plantZones: d.plantZones,
-            humanTargets: d.humanTargets,     // NEW
-            humanDose: d.humanDose,           // NEW
           }),
         )
         .catch(() => {});
@@ -170,6 +167,83 @@ export function useCockpit() {
   const virt = baseSol + baseTod + phase;            // continuous day position
   const uiSol = ((Math.floor(virt) % 30) + 30) % 30; // 0..29 (safe mod)
   const effTod = virt - Math.floor(virt);            // 0..1
+
+  // ---------- PRIME: always seed a decision on mount so panel isn't empty ----------
+  useEffect(() => {
+    if (edge?.decisionId) return; // don't double-prime
+    const body = JSON.stringify({ demo: true });
+    fetch(`${API}/lights/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    })
+      .then((r) => r.json())
+      .then((d: any) => {
+        const incoming: EdgeDecision | null =
+          (d && typeof d === "object" && "applied" in d) ? (d as EdgeDecision)
+          : synthesizeDecision(0, 0, 0, d);
+
+        if (incoming?.applied && !edge?.decisionId) {
+          setEdge(incoming);
+          setEdgePulse(true);
+          setTimeout(() => setEdgePulse(false), 1200);
+          pushThought({ id: incoming.decisionId!, text: "Primed UI: awaiting live EDGE.", ts: Date.now(), tone: "info" });
+          console.log("[EDGE][PRIME]", incoming.decisionId, incoming.ruleFamily);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount only
+
+  // ---------- Live planner loop (uses unified clock) ----------
+  // Always post; backend returns {applied:false} if nothing applies.
+  useEffect(() => {
+    if (!status) return;
+
+    const body = JSON.stringify({ sol: uiSol, tod: effTod, energyKw: status.energyKw });
+    fetch(`${API}/lights/plan`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-psl-demo": fastDemo ? "1" : "0",
+      },
+      body,
+    })
+      .then((r) => r.json())
+      .then((d: any) => {
+        const incoming: EdgeDecision | null =
+          (d && typeof d === "object" && "applied" in d) ? (d as EdgeDecision)
+          : synthesizeDecision(uiSol, effTod, status.energyKw, d);
+
+        if (incoming?.applied && incoming.decisionId && incoming.decisionId !== edge?.decisionId) {
+          setEdge(incoming);
+          setEdgePulse(true);
+          setTimeout(() => setEdgePulse(false), 1200);
+
+          const tone: Tone =
+            incoming.ruleFamily === "wake_boost"    ? "wake"  :
+            incoming.ruleFamily === "night_protect" ? "sleep" :
+            incoming.ruleFamily === "energy_trim"   ? "trim"  :
+                                                      "plant";
+
+          const text =
+            incoming.ruleFamily === "wake_boost"
+              ? "Morning alignment: boosting blue to accelerate crew wake."
+              : incoming.ruleFamily === "night_protect"
+              ? "Quiet hours: suppressing blue to protect melatonin."
+              : incoming.ruleFamily === "energy_trim"
+              ? "Budget guard: trimming spectrum to hold energy line."
+              : "Canopy tuning: biasing red/far-red for efficient growth.";
+
+          pushThought({ id: incoming.decisionId!, text, ts: Date.now(), tone });
+          console.log("[EDGE][LIVE]", incoming.decisionId, incoming.ruleFamily);
+        } else if (!incoming?.applied) {
+          setEdge((prev) => prev ?? null);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uiSol, status?.energyKw, fastDemo]);
 
   // ---------- Bands (use unified UI clock) ----------
   let humanBands: Bands = new Array(12).fill(0);
@@ -246,19 +320,15 @@ export function useCockpit() {
   const darkWindowsToday = illumMask ? darkWindowsForDay(illumMask, uiSol) : [];
   const nextDarkInMin = illumMask ? minutesUntilNextDark(effTod, darkWindowsToday) : null;
 
-  // ---------- Human dose (mEDI) ----------
-  // Prefer backend targets; FE computes precise mEDI from current 12-band SPD + intensity hint.
+  // ---------- Optional: human mEDI (melanopic EDI) from 12-band SPD ----------
   const intensityLux = status?.humanIntensityHint ?? 250;
-  const mediLuxComputed = mediFromBands(humanBands, intensityLux);
-  const targets: HumanTargets = status?.humanTargets ?? {
-    morning_medi_lux: 250, day_medi_lux: 250, evening_cap_medi_lux: 50, sleep_cap_medi_lux: 10,
+  const mediLux = mediFromBands(humanBands, intensityLux);
+  const humanTargets: HumanTargets = {
+    morning_medi_lux: 250,
+    day_medi_lux: 250,
+    evening_cap_medi_lux: 50,
+    sleep_cap_medi_lux: 10,
   };
-
-  // Keep latest mEDI available for planner loop
-  const mediRef = useRef<number>(0);
-  useEffect(() => {
-    mediRef.current = mediLuxComputed || 0;
-  }, [mediLuxComputed]);
 
   // ---------- Observer thoughts every ~5s ----------
   useEffect(() => {
@@ -298,78 +368,12 @@ export function useCockpit() {
     if (!fastDemo || !illumMask) return z;
     // Fraction of lit time elapsed today → use as floor for DLI progress so bars move
     const wins = darkWindowsForDay(illumMask, uiSol);
+    // Compute lit-fraction to this TOD
     const litSoFar = wins.reduce((acc, w) => acc - Math.max(0, Math.min(effTod, w.endTod) - Math.min(effTod, w.startTod)), effTod);
     const litFrac = clamp01(litSoFar); // 0..1 of lit time so far
     const lifted = Math.max(z.dliProgress ?? 0, litFrac * 0.9); // 0.9 so we don't claim perfect tracking
     return { ...z, dliProgress: lifted };
   });
-
-  // ---------- Re-Light catch-up (worst DLI gap → % planned catch-up) ----------
-  const relight = (illumMode === "ReLight");
-  let relightCatchupPct = 0;
-  if (Array.isArray(plantZonesView) && plantZonesView.length) {
-    const worstGap = plantZonesView.reduce((acc, z) => {
-      const gap = Math.max(0, 1 - (z.dliProgress ?? 0));
-      return Math.max(acc, gap);
-    }, 0);
-    relightCatchupPct = Math.round(worstGap * 85); // soften a bit for UI truthfulness
-  }
-
-  // ---------- Live planner loop (uses unified clock) ----------
-  // Always post; backend returns {applied:false} if nothing applies.
-  useEffect(() => {
-    if (!status) return;
-
-    const body = JSON.stringify({
-      sol: uiSol,
-      tod: effTod,
-      energyKw: status.energyKw,
-      humanDose: { mediLux: Math.round(mediRef.current) }, // <-- send mEDI to backend mEDI guards
-    });
-
-    fetch(`${API}/lights/plan`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-psl-demo": fastDemo ? "1" : "0",
-      },
-      body,
-    })
-      .then((r) => r.json())
-      .then((d: any) => {
-        const incoming: EdgeDecision | null =
-          (d && typeof d === "object" && "applied" in d) ? (d as EdgeDecision)
-          : synthesizeDecision(uiSol, effTod, status.energyKw, d);
-
-        if (incoming?.applied && incoming.decisionId && incoming.decisionId !== edge?.decisionId) {
-          setEdge(incoming);
-          setEdgePulse(true);
-          setTimeout(() => setEdgePulse(false), 1200);
-
-          const tone: Tone =
-            incoming.ruleFamily === "wake_boost"    ? "wake"  :
-            incoming.ruleFamily === "night_protect" ? "sleep" :
-            incoming.ruleFamily === "energy_trim"   ? "trim"  :
-                                                      "plant";
-
-          const text =
-            incoming.ruleFamily === "wake_boost"
-              ? "Morning alignment: boosting blue to accelerate crew wake."
-              : incoming.ruleFamily === "night_protect"
-              ? "Quiet hours: suppressing blue to protect melatonin."
-              : incoming.ruleFamily === "energy_trim"
-              ? "Budget guard: trimming spectrum to hold energy line."
-              : "Canopy tuning: biasing red/far-red for efficient growth.";
-
-          pushThought({ id: incoming.decisionId!, text, ts: Date.now(), tone });
-          console.log("[EDGE][LIVE]", incoming.decisionId, incoming.ruleFamily);
-        } else if (!incoming?.applied) {
-          setEdge((prev) => prev ?? null);
-        }
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uiSol, status?.energyKw, fastDemo]);
 
   return {
     // raw & derived status
@@ -402,11 +406,7 @@ export function useCockpit() {
     // ticker stream for ThoughtLine
     ticker,
 
-    // human dose (mEDI)
-    humanDose: { mediLux: mediLuxComputed, targets },
-
-    // Re-Light chip signals
-    relight,
-    relightCatchupPct,
+    // optional human dose (mEDI)
+    humanDose: { mediLux, targets: humanTargets },
   };
 }

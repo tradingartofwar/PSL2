@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 
 type TimelineBand = { start: number; end: number; color: string }; // overlays
 type IllumSeg = { start: number; end: number; lit: boolean };
+type DarkWin = { startTod: number; endTod: number }; // NEW: micro-dark (0..1 within the day)
 
 type Props = {
   day: number;                 // 0..(totalDays-1)
@@ -15,6 +16,8 @@ type Props = {
   totalDays?: number;          // default 30
   dayLabel?: string;           // default "Mission Day"
   showPercent?: boolean;       // default true
+  // NEW (Build 6)
+  darkWindowsToday?: DarkWin[];
 };
 
 export const Timeline30 = memo(function Timeline30({
@@ -26,6 +29,7 @@ export const Timeline30 = memo(function Timeline30({
   totalDays = 30,
   dayLabel = "Mission Day",
   showPercent = true,
+  darkWindowsToday = [],
 }: Props) {
   const dMax = Math.max(1, Math.floor(totalDays));
   const d = Math.max(0, Math.min(dMax - 1, Math.floor(day || 0)));
@@ -36,6 +40,13 @@ export const Timeline30 = memo(function Timeline30({
 
   const ticks = useMemo(() => Array.from({ length: dMax }, (_, i) => i + 1), [dMax]);
   const gridStyle = { gridTemplateColumns: `repeat(${dMax}, minmax(0, 1fr))` } as const;
+
+  // helper: map [start,end] (days) to CSS %
+  const dayToPct = (startDay: number, endDay: number) => {
+    const left = `${(Math.max(0, startDay) / dMax) * 100}%`;
+    const width = `${((Math.min(dMax, endDay) - Math.max(0, startDay)) / dMax) * 100}%`;
+    return { left, width };
+  };
 
   return (
     <div className="rounded-2xl border border-[#1C2933] bg-[#0E141B] p-4" role="region" aria-label="Lunar synodic cycle">
@@ -65,7 +76,7 @@ export const Timeline30 = memo(function Timeline30({
                 <li><span className="text-white/90">Green segments</span> = site is sunlit; <span className="text-white/90">gray segments</span> = site is dark.</li>
                 <li>The thin <span className="text-[#43F3A1]">neon line</span> marks <span className="text-white/90">{label}</span> (current time).</li>
                 <li>The <span className="text-[#43F3A1]">green fill</span> shows total progress through the 30-day cycle.</li>
-                <li>Illumination windows bias spectra & energy (Pre-dark → Dark → Re-light → Sunlit).</li>
+                <li>Thin inner slivers highlight **today’s micro-dark windows**.</li>
               </ul>
               <div className="mt-2 text-white/60">
                 Tip: enable <code>?fast_tod=1</code> to see mode flips faster.
@@ -84,8 +95,7 @@ export const Timeline30 = memo(function Timeline30({
       <div className="relative h-8 rounded bg-[#0A0F14] border border-[#1C2933] overflow-hidden">
         {/* Illumination band (behind progress) */}
         {illum.map((seg, i) => {
-          const left = `${(Math.max(0, seg.start) / dMax) * 100}%`;
-          const width = `${((Math.min(dMax, seg.end) - Math.max(0, seg.start)) / dMax) * 100}%`;
+          const { left, width } = dayToPct(seg.start, seg.end);
           const color = seg.lit ? "#163B2C" : "#1B2229"; // greenish vs dark gray
           const startDay = Math.max(0, seg.start) + 1;
           const endDay = Math.min(dMax, seg.end);
@@ -127,14 +137,30 @@ export const Timeline30 = memo(function Timeline30({
 
         {/* optional overlays */}
         {bands.map((b, idx) => {
-          const leftPct = `${(Math.max(0, b.start) / dMax) * 100}%`;
-          const widthPct = `${((Math.min(dMax, b.end) - Math.max(0, b.start)) / dMax) * 100}%`;
+          const { left, width } = dayToPct(b.start, b.end);
           return (
             <div
               key={idx}
               className="absolute top-0 bottom-0"
-              style={{ left: leftPct, width: widthPct, background: b.color, opacity: 0.25 }}
+              style={{ left, width, background: b.color, opacity: 0.25 }}
               aria-hidden
+            />
+          );
+        })}
+
+        {/* NEW: today's micro-dark slivers (thin inner bars) */}
+        {darkWindowsToday?.map((w, i) => {
+          const left = `${((d + Math.max(0, Math.min(1, w.startTod))) / dMax) * 100}%`;
+          const widthPct = ((Math.max(0, Math.min(1, w.endTod)) - Math.max(0, Math.min(1, w.startTod))) / dMax) * 100;
+          const width = `${Math.max(0.5, widthPct)}%`; // clamp to ≥0.5% so slivers are visible
+          const tip = `Dark window • ~${Math.round((w.endTod - w.startTod) * 24 * 60)} min`;
+          return (
+            <div
+              key={`md-${i}`}
+              className="absolute top-[2px] bottom-[2px] rounded bg-white/45 dark:bg-zinc-200/45 mix-blend-overlay"
+              style={{ left, width }}
+              title={tip}
+              aria-label={tip}
             />
           );
         })}

@@ -11,7 +11,6 @@ import { EnergyHUD } from "@/components/EnergyHUD";
 import { Timeline30 } from "@/components/Timeline30";
 import AIStrategistChip from "@/components/AIStrategistChip";
 import ThoughtLine from "@/components/ThoughtLine";
-import PresenceDrawer from "@/components/cockpit/PresenceDrawer";
 
 import { useCockpit } from "@/lib/useCockpit";
 import { toDaySegments } from "@/lib/illumination";
@@ -42,14 +41,8 @@ export default function Page() {
     // client-synced illumination mode for HUD
     illumMode,
 
-    // Build 7 — human melanopic dose
+    // NEW: human melanopic dose
     humanDose,
-    zones,
-    crew,
-
-    // NEW — Re-Light
-    relight,
-    relightCatchupPct,
   } = useCockpit();
 
   // --- helpers / fallbacks
@@ -98,11 +91,9 @@ export default function Page() {
         <HeaderHUD />
 
         <div className="grid grid-cols-12 gap-6">
-          {/* Left: Crew + Presence + Plants */}
+          {/* Left: Crew + Plants */}
           <aside className="col-span-12 md:col-span-3 space-y-6">
             <CrewSidebar />
-            {/* Presence Drawer (MVP) */}
-            <PresenceDrawer crew={(crew as any) ?? []} zones={(zones as any) ?? []} />
             <PlantSidebar />
           </aside>
 
@@ -164,7 +155,7 @@ export default function Page() {
             </div>
           </section>
 
-          {/* Right: Energy + chips + rotating Thought Line */}
+          {/* Right: Energy + Pre-Dark chip + single EDGE Analytics chip + rotating Thought Line */}
           <aside className="col-span-12 md:col-span-3 space-y-3">
             {/* synced to client clock */}
             <EnergyHUD
@@ -176,7 +167,7 @@ export default function Page() {
               humanIntensity={humanIntensity}
             />
 
-            {/* Pre-Dark chip (≤45m; pulse ≤15m) */}
+            {/* NEW: Pre-Dark chip (≤45m; pulse ≤15m) */}
             {typeof nextDarkInMin === "number" && nextDarkInMin <= 45 && (
               <div
                 className="mx-2 mt-1 inline-flex items-center gap-2 rounded-md border border-amber-400/30 bg-amber-400/10 px-2 py-1 text-[11px] text-amber-300"
@@ -193,22 +184,9 @@ export default function Page() {
               </div>
             )}
 
-            {/* NEW: Re-Light catch-up chip */}
-            {relight && relightCatchupPct > 0 && (
-              <div
-                className="mx-2 mt-1 inline-flex items-center gap-2 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-300"
-                title="Re-Light window — planned DLI catch-up across canopy"
-                role="status"
-                aria-live="polite"
-              >
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                Re-Light catch-up {Math.round(relightCatchupPct)}%
-              </div>
-            )}
-
-            {/* Unified copy: Edge Decisions chip */}
+            {/* Keep ONLY the original EDGE ANALYTICS chip */}
             <div className="flex items-center justify-center">
-              <AIStrategistChip active label="Edge Decisions" sublabel="Stable, explainable choices" />
+              <AIStrategistChip active />
             </div>
 
             {/* Thought line — rotator (3s) */}
