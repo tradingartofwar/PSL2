@@ -1,10 +1,14 @@
-PSL2 Cockpit — Full Setup, Run, and Troubleshooting
+# PSL2 Cockpit — Full Setup, Run, and Troubleshooting
 
-A monorepo for the PSL2 cockpit: a mission-style UI that renders Circadian (humans) and Growth (plants) spectra, responds to EDGE Analytics (AI plan deltas), and adapts to the Shackleton site illumination (synodic month) while tracking mission progress.
+A monorepo for the PSL2 cockpit: a mission-style UI that renders Circadian (humans) and Growth (plants) spectra, responds to **Edge Decisions** (AI plan deltas), and adapts to the Shackleton site illumination (synodic month) while tracking mission progress.
 
-This README is exhaustive and assumes a fresh clone.
+This README assumes a fresh clone.
 
-TL;DR (Windows Quickstart)
+---
+
+## ⚡ TL;DR (Windows Quickstart)
+
+```powershell
 # From repo root (C:\psl2)
 
 # 1) Generate 30-day schedule (Python)
@@ -12,322 +16,186 @@ python .\tools\generate_schedule.py --out .\data\mock\daily.json
 
 # 2) Start backend (dev)
 cd .\backend
-pnpm dlx nodemon --watch src --ext ts --exec "pnpm dlx ts-node --transpile-only src/server.ts"
+npm install
+npm run dev
 # Verify: irm http://localhost:5000/status | ConvertTo-Json -Depth 6
 
 # 3) Start frontend (dev)
 cd ..\frontend
-pnpm dev   # or npm run dev
+npm install
+npm run dev
 # Open http://localhost:3000 (or 3001 if 3000 is busy)
 # Demo flags: http://localhost:3000/?fast_tod=1&ai=1
 
-
-If pnpm acts up, use npm (instructions below) and see Troubleshooting.
-
-Prerequisites
+🔑 Prerequisites
 
 Node.js 20+ (LTS) — recommended via nvm-windows
 
-pnpm 10+ (preferred) or npm (fallback)
+npm (built-in) or pnpm 10+ (optional)
 
-Python 3.9+ (for the schedule generator)
+Python 3.9+ (for schedule generator)
 
 Git
 
-Optional (nice to have):
+Optional:
 
 PowerShell 7+
 
 Docker Desktop (for containerized runs later)
 
-Monorepo Layout
+📂 Monorepo Layout
 C:\psl2
 ├─ backend\                 # Fastify + TypeScript (API)
-│  └─ src\routes\           # status, schedule, plan, illumination
+│  └─ src\routes\           # status, schedule, plan, illumination, presence
 ├─ frontend\                # Next.js + Tailwind + shadcn/ui + Framer Motion
-│  ├─ app\                  # pages + layout (App Router)
+│  ├─ app\                  # layout & pages (App Router)
 │  ├─ appStyles\            # globals.css, tokens, utilities
-│  ├─ components\           # SpectralWave, Timeline30, HeaderHUD, CrewSidebar, etc.
+│  ├─ components\           # SpectralWave, Timeline30, HUDs, cockpit/PresenceDrawer, etc.
 │  └─ lib\                  # useCockpit, schedule, illumination helpers, sim/human
 ├─ config\                  # JSON configs
-│  ├─ zones.json            # zones (3 decks + greenhouse)
+│  ├─ zones\*.json          # zone definitions (deck, stream, etc.)
 │  └─ roster.json           # crew (2 members by default)
 ├─ data\
-│  └─ mock\daily.json       # generated 30-day SPD schedule (humans/plants)
+│  └─ mock\daily.json       # generated 30-day SPD schedule
 ├─ tools\
-│  └─ generate_schedule.py  # Python generator for daily.json
+│  └─ generate_schedule.py  # Python generator
 └─ README.md                # this file
 
-Configuration
+⚙️ Configuration
 Zones & Roster
 
-config/zones.json — zone ids, names, deck, stream (human/plant), fixture counts, greenhouse overlay defaults.
+config/zones/*.json — zone ids, names, deck, stream (human/plant), fixture counts, greenhouse overlay defaults.
 
-config/roster.json — crew list with id, name, zoneId, phase (SLEEP/WAKE SYNC/WORK/WIND DOWN), driftMin.
+config/roster.json — crew list with id, name, zoneId, phase (SLEEP/WAKE/WORK/WIND DOWN), driftMin.
 
-The backend /status route reads these files and returns them to the UI.
+Environment
 
-Environment (optional)
+No root .env required for dev. Defaults:
 
-Root .env is not required for dev. Defaults:
+Frontend expects NEXT_PUBLIC_API_BASE=http://localhost:5000 (already coded).
 
-Frontend expects NEXT_PUBLIC_API_BASE = http://localhost:5000 (already defaulted in code).
-
-Demo switches via URL query:
-
-?fast_tod=1 — accelerate time-of-day morphing in the spectra (visible changes).
-
-?ai=1 — enable EDGE AI override calls (/lights/plan).
-
-Data Generation (Python)
-
-We render with a 12-band SPD array per stream (human/plant) over a 30-day window. Generate once:
-
+🧪 Data Generation (Python)
 cd C:\psl2
 python .\tools\generate_schedule.py --out .\data\mock\daily.json
+Produces data/mock/daily.json, consumed by /schedule/30d.
 
+🔌 Backend (API)
 
-This produces data/mock/daily.json consumed by /schedule/30d.
-
-Backend (API)
-
-Stack: Fastify + TypeScript (no build needed for dev).
+Stack: Fastify + TypeScript
 
 Key routes:
 
-GET /status — clock, lunar, energy, zones[], crew[]
+GET /status → clock, lunar, energy, zones[], crew[], presence overrides
 
-GET /schedule/30d — 30-day SPD cycles (human + plant)
+GET /schedule/30d → 30-day SPD cycles (human + plant)
 
-GET /illumination/30d — 30-day site illumination mask (hourly)
+GET /illumination/30d → 30-day site illumination mask (hourly)
 
-POST /lights/plan — EDGE AI deltas (human/plant) + greenhouse overlay
+POST /lights/plan → Edge Decisions (wake_boost, night_protect, plant_bias, energy_trim, plant_catchup)
 
-GET /health — ok
+POST /presence/move → demo presence override (real habitat uses sensors)
 
-(optional / WIP) POST /presence/move — presence drawer hook
+GET /health → ok
 
-Dev run:
+Run:
+cd backend
+npm install
+npm run dev
 
-cd C:\psl2\backend
-pnpm dlx nodemon --watch src --ext ts --exec "pnpm dlx ts-node --transpile-only src/server.ts"
-
-
-Verify:
+Verify endpoints with PowerShell:
 
 irm http://localhost:5000/status | ConvertTo-Json -Depth 6
 irm http://localhost:5000/schedule/30d | ConvertTo-Json -Depth 6
 irm http://localhost:5000/illumination/30d | ConvertTo-Json -Depth 3
 
+🖥️ Frontend (UI)
 
-If you prefer npm scripts, add to backend/package.json:
+Stack: Next.js (App Router) + Tailwind + shadcn/ui + Framer Motion
 
-{ "scripts": {
-  "dev": "nodemon --watch src --ext ts --exec \"ts-node src/server.ts\"",
-  "build": "tsc",
-  "start": "node dist/src/server.js"
-} }
+Run:
+cd frontend
+npm install
+npm run dev
 
-Frontend (UI)
-
-Stack: Next.js (App Router) + Tailwind + shadcn/ui + Framer Motion.
-
-Dev run:
-
-cd C:\psl2\frontend
-pnpm dev   # or npm run dev
-# Next will use :3000 or auto switch to :3001 if busy
-
-
-Open: http://localhost:3000 (or 3001).
+Open http://localhost:3000
+ (Next auto-switches to :3001 if busy).
 
 Demo flags:
 
-?fast_tod=1 — accelerates time-of-day morphing.
+?fast_tod=1 — accelerates TOD morphing
 
-?ai=1 — enables AI deltas (/lights/plan).
+?ai=1 — enables AI deltas via /lights/plan
 
-Current Baseline (Build 5.5)
+🚀 Current Baseline (Build 7)
 
-Unified timebase (effTod) — one 1s heartbeat drives /status, /lights/plan, spectra sampling, Timeline, and the ThoughtLine. Panels update in lockstep.
+Human-aware dosing: planner guards wake_boost / night_protect using live mEDI targets.
 
-ThoughtLine rotator — the ticker cycles recent items every ~3s with a subtle pulse/glow.
+Re-Light catch-up: chip shows % canopy recovery based on worst DLI gap.
 
-EDGE Decisions panel (renamed from “Edge Debug” for clarity) — always populated: a prime decision appears within ~2s, then live decisions overwrite as TOD/energy windows are hit.
+Presence drawer: move crew between zones; updates rings + ThoughtLine in <2s. Tooltip clarifies: real deployments use sensors.
 
-Rule pills — appear in the correct spectrum:
+Edge Decisions copy unify: chip + panel now consistently say Edge Decisions.
 
-Circadian for human rules (wake_boost, night_protect)
+Stable core from Build-6: micro-dark sync, Pre-Dark chip, Timeline slivers, ThoughtLine cues, unified timebase heartbeat.
 
-Growth for plant/energy rules (plant_bias, energy_trim)
+🛰️ What You Should See (demo)
 
-Repo — frontend/ is a normal folder (no submodule).
+Header HUD: UTC/local, lunar % and days remaining.
 
-What You Should See (Build 5.5)
+Crew Sidebar: two sync rings, color coded by circadian alignment.
 
-Header HUD: live local time (from /status), lunar % and days remaining.
+Plant Sidebar: 3 plant bars with DLI progress.
 
-Crew Sidebar: two sync rings, colored by circadian alignment from /status.crew + /schedule/30d.
+Spectral panels: Circadian & Growth waves with pills when rules apply.
 
-Plant Sidebar: three plant bars (MicroGreens, Sprouts, Algae) with DLI progress, PPFD, overlay status.
+Right column: Energy HUD dial, Edge Decisions chip, ThoughtLine, Re-Light/Pre-Dark chips.
 
-Center Spectra:
+Edge Decisions panel: status, rule, rationale, expires in. Full JSON on hover.
 
-Circadian Spectrum — 12-band wave for humans, animated + shimmer. EDGE pills appear here only for wake_boost / night_protect.
+Timeline30: lunar cycle band with CURRENT marker + dark slivers.
 
-Growth Spectrum — 12-band wave for plants, styled with blue + red/far-red. EDGE pills appear here for plant_bias / energy_trim.
+Fixed badge: “EDGE ACTIVE — {ruleFamily}” bottom-right.
 
-Right Column:
+🔄 Common Tasks
 
-Energy HUD — semi-dial with kW breakdown and illumination mode chip.
-
-EDGE Analytics Chip — the only chip, pulsing when active.
-
-Thought Line — rotating ticker showing the latest decision or observer text (e.g. “Quiet hours — suppressing blue to protect melatonin.”).
-
-Edge Decisions Panel — compact summary of the current decision (status, rule, rationale, expires in). Hover for full JSON.
-
-Mission Timeline — 30-day band with CURRENT marker and lunar illumination overlay (green=Sunlit, gray=Dark).
-
-Fixed Badge — bottom-right global badge: “EDGE ACTIVE — {ruleFamily}”.
-
-Open http://localhost:3001/?fast_tod=1&ai=1 to see waves morph quickly and EDGE decisions apply.
-
-Illumination-Aware Blend (How the Waves Are Computed)
-
-At each heartbeat (~1 s):
-
-Baselines from /schedule/30d → H_base, P_base
-
-AI from /lights/plan → H_ai = applyDelta(H_base), P_ai = applyDelta(P_base)
-
-Illumination mode from /illumination/30d → Sunlit | PreDark | Dark | ReLight
-
-Mode scalers → H_final, P_final (humans bias blue/warm & cap intensity; plants flex PPFD to track DLI)
-
-Panels render H_final and P_final as animated waves
-
-This is visible even without sensors; later you can add measured PPFD/lux to close the loop.
-
-Common Tasks
-Regenerate schedule
+Regenerate schedule:
 python .\tools\generate_schedule.py --out .\data\mock\daily.json
 
-Adjust crew of two
+Adjust crew:
+Edit config/roster.json → restart backend.
 
-Edit config/roster.json and restart the backend. The sidebar will follow.
+Add a zone:
+Edit config/zones/*.json → restart backend.
 
-Add a zone
+Demo presence:
+Use Presence drawer dropdown. Tooltip notes sensors would replace this in reality.
 
-Edit config/zones.json (id/name/deck/stream), restart backend.
+🛠️ Troubleshooting (Windows)
 
-Trigger greenhouse overlay (demo)
+Port 3000 busy → Next auto-switches to 3001.
 
-Open the optional Greenhouse card and start a 2/5/10 min overlay. This will not change the plant SPD panel; it only turns on low-power neutral-white aisle/task fixtures.
+pnpm workspace issues → use npm (npm install, npm run dev).
 
-Troubleshooting (Windows-centric)
-Port 3000 in use → Next switches to 3001
+Backend missing deps → cd backend && npm install fastify @fastify/cors.
 
-That’s normal. Watch the console for the URL it prints.
+Type errors → use npm run dev with ts-node --transpile-only.
 
-pnpm “manifest undefined” / workspace confusion
+Waves static → add ?fast_tod=1.
 
-Symptoms: Cannot destructure property 'manifest' ... or Turbopack warning about multiple lockfiles.
+No AI effect → add ?ai=1 and check /lights/plan in Network tab.
 
-Fix (root):
-
-# Ensure one root workspace
-Set-Content C:\psl2\pnpm-workspace.yaml "packages:`n  - 'frontend'`n  - 'backend'"
-# Remove extra lockfile in frontend (leave only root lockfile)
-Remove-Item C:\psl2\frontend\pnpm-lock.yaml -Force -ErrorAction SilentlyContinue
-# Optional: pnpm install at root
-cd C:\psl2; pnpm install
-
-
-Or just use npm in the frontend:
-
-cd C:\psl2\frontend
-if (!(Test-Path package.json)) { npm init -y }
-npm install --no-audit --no-fund --ignore-scripts next react react-dom framer-motion
-npm run dev
-
-Backend: "Cannot find module 'fastify'"
-
-Install runtime deps in backend/:
-
-cd C:\psl2\backend
-if (!(Test-Path package.json)) { npm init -y }
-npm install fastify @fastify/cors
-
-
-Then re-run the nodemon/ts-node command.
-
-TypeScript complains about require or Node types
-
-We use ESM imports. Use the --transpile-only ts-node run above, or add @types/node and a tsconfig.json.
-
-Animated waves move but shape doesn’t morph
-
-Add ?fast_tod=1 to speed up time-of-day. Ensure the backend is running and /schedule/30d returns 200.
-
-AI not affecting spectra
-
-Add ?ai=1 to the URL. Watch Network for /lights/plan. You can make energy vary (already wired in /status) to see plant trims/boosts.
-
-Line-ending warnings (LF will be replaced by CRLF) on Windows are benign unless your team enforces core.autocrlf=false.
-
-Design Notes (Build 5.5)
-
-Unified timebase: a single 1s heartbeat (effTod) drives all panels.
-
-EDGE Analytics: each decision includes decisionId, expiresAt, and rationale, and is logged to JSONL.
-
-EDGE Decisions panel: immediate prime decision on load (never looks empty), then live decisions overwrite when windows hit.
-
-Illumination Mode: derived from the /illumination/30d mask.
-
-Observer Thoughts: stream every few seconds, keeping the Thought Line alive between rule firings.
-
-Global Cooldowns: per rule family to prevent spam.
-
-UI polish: single EDGE chip, compact decisions panel, pulsing Thought Line, clean Timeline meter.
-
-Next (Build 6 preview — Shackleton micro-dark)
-
-Objective: surface short micro-dark windows at Shackleton (often clustered near Day ~14) and sync cockpit behavior to them — without changing site physics.
-
-Planned additions:
-
-Timeline: thin micro-dark slivers inside Sunlit for today’s windows.
-
-Pre-Dark chip: “Pre-Dark in Xm” when next dark window ≤45m (amber at ≤15m).
-
-ThoughtLine cues: “Pre-Dark — banking DLI”, “Dark window — holding reserves”, “Re-Light — canopy catch-up”.
-
-Presence drawer: move crew between zones; /status reflects in <2s.
-
-(Stretch) Per-zone EDGE when presence creates conflicts.
-
-Roadmap (optional)
-
-Replace synthetic illumination with horizon-derived mask (same API)
-
-Per-zone EDGE deltas (currently global) when multi-occupancy conflicts matter
-
-Zone telemetry badges (lux/melanopic; PPFD/DLI) and small error corrector
-
-Presence drawer (UI) → swap for sensors later (BLE/PIR)
-
-Docker compose for one-command up
-
-License & Contributions
+📜 License & Contributions
 
 Default: MIT
 
-PRs welcome — keep commits small and update CHANGELOG.md with user-visible changes.
+PRs welcome — keep commits small and update CHANGELOG.md.
 
-Contact
+📡 Contact
 
-EDGE Analytics chip in UI shows activity; planner rationale is returned from /lights/plan for explainability.
+The Edge Decisions chip pulses with activity; rationale comes from /lights/plan.
+For issues, open a GitHub issue with console output + OS/Node versions.
 
-For help, file an issue with the exact console output and OS/Node versions.
+
+---
+
+Do you want me to also create a **CHANGELOG entry (v0.7.0)** alongside this so Polaris/Pulse can log Build-7 baseline right away?
