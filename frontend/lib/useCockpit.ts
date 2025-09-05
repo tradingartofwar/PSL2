@@ -21,7 +21,7 @@ const applyDelta = (base: Bands, delta?: Bands): Bands =>
 
 // ---------- Types from /status ----------
 export type Zone = { id: string; name: string; deck: number; stream: "human" | "plant" };
-export type Crew = { id: string; name: string; zoneId: string; phase: Phase; driftMin: number };
+export type Crew = { id: "A" | "B"; name: string; zoneId: string; phase: Phase; driftMin: number };
 
 type EnergyBreakdown = {
   humanKW: number;
@@ -48,7 +48,7 @@ type Status = {
   energyKw: number;
   energyBreakdown?: EnergyBreakdown;
   energyMode?: string;
-  humanIntensityHint?: number; // overall lux-ish hint for circadian stream
+  humanIntensityHint?: number;
   local?: string;
   utc?: string;
   lunar?: { pct: number; daysRemaining: number };
@@ -69,6 +69,8 @@ type EdgeDecision = {
   humanDelta?: number[];   // 12-length
   plantDelta?: number[];   // 12-length
   rationale?: string;
+  // Batch 3: optional targeting echo from BE
+  zoneId?: string | null;
 };
 
 function isEdgeActive(edge: EdgeDecision | null) {
@@ -150,8 +152,8 @@ export function useCockpit() {
             zones: d.zones,
             crew: d.crew,
             plantZones: d.plantZones,
-            humanTargets: d.humanTargets,     // NEW
-            humanDose: d.humanDose,           // NEW
+            humanTargets: d.humanTargets,
+            humanDose: d.humanDose,
           }),
         )
         .catch(() => {});
@@ -168,7 +170,7 @@ export function useCockpit() {
   const baseSol = status?.sol ?? 0;
   const baseTod = status?.tod ?? 0;
   const virt = baseSol + baseTod + phase;            // continuous day position
-  const uiSol = ((Math.floor(virt) % 30) + 30) % 30; // 0..29 (safe mod)
+  const uiSol = ((Math.floor(virt) % 30) + 30) % 30; // 0..29
   const effTod = virt - Math.floor(virt);            // 0..1
 
   // ---------- Bands (use unified UI clock) ----------
@@ -194,7 +196,7 @@ export function useCockpit() {
     let H = edgeHuman ? applyDelta(hb.bands, edgeHuman as any) : hb.bands;
     let P = edgePlant ? applyDelta(pb.bands, edgePlant as any) : pb.bands;
 
-    // Micro-dark windows & mode (matches Timeline slivers)
+    // Micro-dark windows & mode
     const wins = illumMask ? darkWindowsForDay(illumMask, uiSol) : [];
     illumMode = modeFromWindows(effTod, wins);
 
@@ -247,18 +249,14 @@ export function useCockpit() {
   const nextDarkInMin = illumMask ? minutesUntilNextDark(effTod, darkWindowsToday) : null;
 
   // ---------- Human dose (mEDI) ----------
-  // Prefer backend targets; FE computes precise mEDI from current 12-band SPD + intensity hint.
   const intensityLux = status?.humanIntensityHint ?? 250;
   const mediLuxComputed = mediFromBands(humanBands, intensityLux);
   const targets: HumanTargets = status?.humanTargets ?? {
     morning_medi_lux: 250, day_medi_lux: 250, evening_cap_medi_lux: 50, sleep_cap_medi_lux: 10,
   };
 
-  // Keep latest mEDI available for planner loop
   const mediRef = useRef<number>(0);
-  useEffect(() => {
-    mediRef.current = mediLuxComputed || 0;
-  }, [mediLuxComputed]);
+  useEffect(() => { mediRef.current = mediLuxComputed || 0; }, [mediLuxComputed]);
 
   // ---------- Observer thoughts every ~5s ----------
   useEffect(() => {
@@ -293,14 +291,13 @@ export function useCockpit() {
     else if (bucket === -1 && nd != null) pushThought({ id: `relight-${now}`, text: "Re-Light window — canopy catch-up underway.", ts: now, tone: "plant" });
   }, [nextDarkInMin]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---------- Fast demo: lift Plant DLI progress with the accelerated clock ----------
+  // ---------- Fast demo: lift Plant DLI progress with accelerated clock ----------
   const plantZonesView: PlantZone[] = (status?.plantZones ?? []).map((z) => {
     if (!fastDemo || !illumMask) return z;
-    // Fraction of lit time elapsed today → use as floor for DLI progress so bars move
     const wins = darkWindowsForDay(illumMask, uiSol);
     const litSoFar = wins.reduce((acc, w) => acc - Math.max(0, Math.min(effTod, w.endTod) - Math.min(effTod, w.startTod)), effTod);
-    const litFrac = clamp01(litSoFar); // 0..1 of lit time so far
-    const lifted = Math.max(z.dliProgress ?? 0, litFrac * 0.9); // 0.9 so we don't claim perfect tracking
+    const litFrac = clamp01(litSoFar);
+    const lifted = Math.max(z.dliProgress ?? 0, litFrac * 0.9);
     return { ...z, dliProgress: lifted };
   });
 
@@ -312,8 +309,21 @@ export function useCockpit() {
       const gap = Math.max(0, 1 - (z.dliProgress ?? 0));
       return Math.max(acc, gap);
     }, 0);
-    relightCatchupPct = Math.round(worstGap * 85); // soften a bit for UI truthfulness
+    relightCatchupPct = Math.round(worstGap * 85);
   }
+
+  // ---------- Batch 3: per-zone targets ----------
+  const humanTargetZoneId: Record<"A" | "B", string | null> = {
+    A: status?.crew?.find(c => c.id === "A")?.zoneId ?? null,
+    B: status?.crew?.find(c => c.id === "B")?.zoneId ?? null,
+  };
+
+  const plantTargetZoneId: string | null = (() => {
+    if (!plantZonesView?.length) return null;
+    let worst = plantZonesView[0];
+    for (const z of plantZonesView) if ((z.dliProgress ?? 1) < (worst.dliProgress ?? 1)) worst = z;
+    return worst.id;
+  })();
 
   // ---------- Live planner loop (uses unified clock) ----------
   // Always post; backend returns {applied:false} if nothing applies.
@@ -324,15 +334,13 @@ export function useCockpit() {
       sol: uiSol,
       tod: effTod,
       energyKw: status.energyKw,
-      humanDose: { mediLux: Math.round(mediRef.current) }, // <-- send mEDI to backend mEDI guards
+      humanDose: { mediLux: Math.round(mediRef.current) }, // mEDI guards
+      // NOTE: this loop is generic. Per-crew posting uses postHumanPlan below.
     });
 
     fetch(`${API}/lights/plan`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-psl-demo": fastDemo ? "1" : "0",
-      },
+      headers: { "Content-Type": "application/json", "x-psl-demo": fastDemo ? "1" : "0" },
       body,
     })
       .then((r) => r.json())
@@ -353,16 +361,13 @@ export function useCockpit() {
                                                       "plant";
 
           const text =
-            incoming.ruleFamily === "wake_boost"
-              ? "Morning alignment: boosting blue to accelerate crew wake."
-              : incoming.ruleFamily === "night_protect"
-              ? "Quiet hours: suppressing blue to protect melatonin."
-              : incoming.ruleFamily === "energy_trim"
-              ? "Budget guard: trimming spectrum to hold energy line."
-              : "Canopy tuning: biasing red/far-red for efficient growth.";
+            incoming.ruleFamily === "wake_boost"    ? "Morning alignment: boosting blue to accelerate crew wake."
+          : incoming.ruleFamily === "night_protect" ? "Quiet hours: suppressing blue to protect melatonin."
+          : incoming.ruleFamily === "energy_trim"   ? "Budget guard: trimming spectrum to hold energy line."
+                                                    : "Canopy tuning: biasing red/far-red for efficient growth.";
 
           pushThought({ id: incoming.decisionId!, text, ts: Date.now(), tone });
-          console.log("[EDGE][LIVE]", incoming.decisionId, incoming.ruleFamily);
+          console.log("[EDGE][LIVE]", incoming.decisionId, incoming.ruleFamily, incoming.zoneId ?? "(no zone)");
         } else if (!incoming?.applied) {
           setEdge((prev) => prev ?? null);
         }
@@ -370,6 +375,30 @@ export function useCockpit() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uiSol, status?.energyKw, fastDemo]);
+
+  // ---------- Batch 3: explicit per-crew planner post (includes zoneId) ----------
+  async function postHumanPlan(params: {
+    crew: "A" | "B";
+    sol: number;
+    tod: number;
+    energyKw: number;
+    mediLux: number;
+  }) {
+    const zoneId = humanTargetZoneId[params.crew];
+    const body: any = {
+      sol: params.sol,
+      tod: params.tod,
+      energyKw: params.energyKw,
+      humanDose: { mediLux: params.mediLux },
+    };
+    if (zoneId) body.zoneId = zoneId; // attach for BE echo → FE routing
+    const res = await fetch(`${API}/lights/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  }
 
   return {
     // raw & derived status
@@ -408,5 +437,10 @@ export function useCockpit() {
     // Re-Light chip signals
     relight,
     relightCatchupPct,
+
+    // Batch 3 exports
+    humanTargetZoneId,  // { A, B }
+    plantTargetZoneId,  // worst-gap plant zone
+    postHumanPlan,
   };
 }
