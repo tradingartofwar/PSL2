@@ -11,10 +11,9 @@ function loadJson<T>(p: string, fallback: T): T {
 type Zone = { id: string; name: string; deck: number; stream: "human" | "plant"; [k: string]: any };
 type Crew = { id: string; name: string; zoneId: string; phase: string; driftMin: number };
 
-const CFG_DIR        = resolve(process.cwd(), "..", "config");   // <repo>/config
-const ZONES_DIR      = join(CFG_DIR, "zones");                   // <repo>/config/zones/*.json
-const ROSTER_PATH    = join(CFG_DIR, "roster.json");             // <repo>/config/roster.json
-const HUMAN_PARAMS_P = join(CFG_DIR, "human_params.json");       // <repo>/config/human_params.json
+const CFG_DIR     = resolve(process.cwd(), "..", "config");   // <repo>/config
+const ZONES_DIR   = join(CFG_DIR, "zones");                   // <repo>/config/zones/*.json
+const ROSTER_PATH = join(CFG_DIR, "roster.json");             // <repo>/config/roster.json
 
 function loadZonesFromFolder(dir: string): Zone[] {
   if (!existsSync(dir)) return [];
@@ -130,10 +129,6 @@ export default async function statusRoutes(fastify: any) {
     // load config-driven topology
     const zones  = loadZonesFromFolder(ZONES_DIR);
     const roster = loadJson<{ crew: Crew[] }>(ROSTER_PATH, { crew: [] });
-    const humanParams = loadJson<{ targets: any; durations_min?: any }>(HUMAN_PARAMS_P, {
-      targets: { morning_medi_lux: 250, day_medi_lux: 250, evening_cap_medi_lux: 50, sleep_cap_medi_lux: 10 },
-      durations_min: { morning: 60, day: 120, evening: 120 }
-    });
 
     // ----- ENERGY INPUTS (edit here to tune) -----
     const HUMAN_ZONES = zones.filter(z => z.stream === "human").length || 12;
@@ -246,14 +241,6 @@ export default async function statusRoutes(fastify: any) {
     };
     const crew = applyPresence(baseCrew);
 
-    // ---------- Build 7: human targets + dose hint on /status ----------
-    // We still let FE compute precise mEDI from 12-band SPD; backend serves targets + a rough dose hint.
-    const humanTargets = humanParams.targets || {
-      morning_medi_lux: 250, day_medi_lux: 250, evening_cap_medi_lux: 50, sleep_cap_medi_lux: 10
-    };
-    // rough hint so UI doesn't show 0; scale cosine intensity to a lux-ish figure
-    const humanDose = { mediLux: Math.max(0, Math.round(humanIntensity * 450)) };
-
     return {
       time:  { utc: now.toISOString(), local: now.toLocaleTimeString("en-US", { hour12: false }), sol, tod: todReal },
       lunar: { pct: 72, daysRemaining: 19 },
@@ -272,13 +259,11 @@ export default async function statusRoutes(fastify: any) {
       zones,
       crew,
       plantZones,
+      // NEW:
       illum: {
         nextDarkInMin,                   // minutes to next window (0 if currently dark; null if none)
         darkWindowsToday                 // [{ startTod, endTod }]
-      },
-      // NEW (Build 7)
-      humanTargets,
-      humanDose
+      }
     };
   });
 }

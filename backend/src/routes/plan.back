@@ -1,0 +1,155 @@
+// backend/src/routes/plan.ts
+import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
+
+type RuleFamily = "night_protect" | "wake_boost" | "energy_trim" | "plant_bias";
+type EdgeDecision = {
+  decisionId: string;
+  createdAt: string;
+  expiresAt: string;
+  ruleFamily: RuleFamily;
+  humanDelta: number[];  // length 12
+  plantDelta: number[];  // length 12
+  rationale: string;
+  context: { sol: number; tod: number; energyKw: number };
+  applied: boolean;
+};
+
+const MAX_DELTA = 0.12; // per-band safety cap
+const TTL_MS = 5 * 60_000; // 5 minutes = visible “pulse” lifetime
+
+// Per-rule cooldowns (avoid spamming same rule too often)
+const COOLDOWN_MS: Record<RuleFamily, number> = {
+  night_protect: 2 * 60_000,
+  wake_boost:    2 * 60_000,
+  energy_trim:   2 * 60_000,
+  plant_bias:    2 * 60_000,
+};
+
+const lastFired = new Map<RuleFamily, number>();
+
+function clamp(v: number, lo = -MAX_DELTA, hi = MAX_DELTA) {
+  return Math.max(lo, Math.min(hi, v));
+}
+function cooled(rule: RuleFamily) {
+  const t = lastFired.get(rule) ?? 0;
+  return Date.now() - t >= (COOLDOWN_MS[rule] ?? 0);
+}
+async function appendJsonl(type: string, payload: unknown) {
+  const dataDir = process.env.DATA_DIR || "/app/data";
+  const runId = process.env.RUN_ID || "dev";
+  const runDir = join(dataDir, "runs", runId);
+  await fs.mkdir(runDir, { recursive: true });
+  await fs.appendFile(join(runDir, "events.jsonl"), JSON.stringify({ type, ts: new Date().toISOString(), payload }) + "\n", "utf8");
+}
+
+export default async function planRoutes(fastify: any) {
+  fastify.post("/lights/plan", async (req: any) => {
+    const body = (req.body ?? {}) as {
+      sol?: number; tod?: number; energyKw?: number;
+      demo?: boolean; force?: boolean; rule?: RuleFamily
+    };
+
+    // Inputs (with sensible fallbacks)
+    const sol = Number.isFinite(body.sol) ? Number(body.sol) : 0;
+    const tod = Number.isFinite(body.tod) ? Number(body.tod) : 0;        // 0..1
+    const energyKw = Number.isFinite(body.energyKw) ? Number(body.energyKw) : 12;
+
+    // Fixed length arrays
+    const N = 12;
+    const humanDelta = Array(N).fill(0);
+    const plantDelta = Array(N).fill(0);
+
+    // 1) PRIME / FAST PATH — return an immediate decision for UI readiness
+    if (body.demo || body.force) {
+      const now = new Date();
+      const rule: RuleFamily = body.rule && ["night_protect","wake_boost","energy_trim","plant_bias"].includes(body.rule)
+        ? body.rule
+        : "plant_bias";
+
+      // Gentle, visible plant nudge for prime
+      const primePlant = [0,0,0,0,0,0, 0.03,0.05,0.07,0.09,0.07,0.04].map(x => clamp(x));
+
+      const decision: EdgeDecision = {
+        decisionId: randomUUID(),
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 60_000).toISOString(), // 60s TTL for the prime pulse
+        ruleFamily: rule,
+        humanDelta, // keep 0 for prime
+        plantDelta: primePlant,
+        rationale: body.demo ? "Demo/prime response for immediate UI readiness." : "Forced quick decision for UI readiness.",
+        context: { sol, tod, energyKw },
+        applied: true,
+      };
+      await appendJsonl("edge_decision_prime", decision);
+      return decision;
+    }
+
+    // 2) LIVE RULES — deterministic, small and explainable
+    let ruleFamily: RuleFamily | null = null;
+    let rationale = "";
+
+    // Rule A: Night protect (crew sleep) — TOD in night window
+    // Use wide window to make demo obvious: [0.85..1.0) ∪ [0.0..0.15)
+    if ((tod < 0.15 || tod > 0.85) && cooled("night_protect")) {
+      ruleFamily = "night_protect";
+      // suppress blue/cyan, add warmth
+      humanDelta[2]  = clamp(-0.12); // ~460nm
+      humanDelta[3]  = clamp(-0.10); // ~490nm
+      humanDelta[4]  = clamp(-0.06); // ~520nm
+      humanDelta[9]  = clamp(+0.05); // ~660nm
+      humanDelta[10] = clamp(+0.06); // ~690nm
+      humanDelta[11] = clamp(+0.08); // ~730nm
+      rationale = "Reduce short wavelengths during crew sleep to protect melatonin.";
+    }
+
+    // Rule B: Wake boost (early day) — TOD morning window
+    // Morning window ~ [0.20..0.40]
+    else if (tod >= 0.20 && tod <= 0.40 && cooled("wake_boost")) {
+      ruleFamily = "wake_boost";
+      humanDelta[2] = clamp(+0.10);
+      humanDelta[3] = clamp(+0.08);
+      humanDelta[4] = clamp(+0.05);
+      humanDelta[9] = clamp(-0.03);
+      humanDelta[10] = clamp(-0.03);
+      rationale = "Morning blue boost to accelerate circadian alignment.";
+    }
+
+    // Rule C: Energy trim — when budget pressure rises
+    else if (energyKw > 18 && cooled("energy_trim")) {
+      ruleFamily = "energy_trim";
+      for (let i = 0; i < N; i++) plantDelta[i] = clamp(-0.10);
+      rationale = "Trim plant power to stay within energy budget without harming targets.";
+    }
+
+    // Rule D: Low-load plant bias — efficiency bias at low load
+    else if (energyKw < 10 && cooled("plant_bias")) {
+      ruleFamily = "plant_bias";
+      plantDelta[9]  = clamp(+0.06); // ~660nm
+      plantDelta[11] = clamp(+0.08); // ~730nm
+      rationale = "Bias red/far-red at low load for efficiency and plant response.";
+    }
+
+    // If nothing fired, keep cockpit calm
+    if (!ruleFamily) return { applied: false };
+
+    const now = new Date();
+    const decision: EdgeDecision = {
+      decisionId: randomUUID(),
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + TTL_MS).toISOString(),
+      ruleFamily,
+      humanDelta,
+      plantDelta,
+      rationale,
+      context: { sol, tod, energyKw },
+      applied: true,
+    };
+
+    lastFired.set(ruleFamily, Date.now());
+    await appendJsonl("edge_decision", decision);
+
+    return decision;
+  });
+}

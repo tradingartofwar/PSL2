@@ -1,0 +1,6 @@
+{
+  "crew": [
+    { "id": "A", "name": "A", "zoneId": "d2_sci", "phase": "WORK",  "driftMin": 0 },
+    { "id": "B", "name": "B", "zoneId": "d3_qA", "phase": "SLEEP", "driftMin": 0 }
+  ]
+}

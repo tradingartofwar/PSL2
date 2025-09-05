@@ -1,0 +1,21 @@
+[
+  {"id":"d1_eva","name":"EVA Airlock","deck":1,"stream":"human","fixtures":4},
+  {"id":"d1_suit","name":"Suit Prep/Maint","deck":1,"stream":"human","fixtures":3},
+  {"id":"d1_work","name":"Workshop/Geology","deck":1,"stream":"human","fixtures":4},
+  {"id":"d1_corr","name":"Corridor (D1)","deck":1,"stream":"human","fixtures":2},
+
+  {"id":"d2_sci","name":"Science/Bio Bay","deck":2,"stream":"human","fixtures":3},
+  {"id":"d2_galley","name":"Wardroom/Galley","deck":2,"stream":"human","fixtures":3},
+  {"id":"d2_plan","name":"Planning/Comms","deck":2,"stream":"human","fixtures":3},
+  {"id":"d2_corr","name":"Corridor (D2)","deck":2,"stream":"human","fixtures":2},
+
+  {"id":"d3_qA","name":"Crew Quarters A","deck":3,"stream":"human","fixtures":2},
+  {"id":"d3_qB","name":"Crew Quarters B","deck":3,"stream":"human","fixtures":2},
+  {"id":"d3_med","name":"Medical/Quiet","deck":3,"stream":"human","fixtures":2},
+  {"id":"d3_corr","name":"Corridor (D3)","deck":3,"stream":"human","fixtures":2},
+
+  {
+    "id":"gh_canopy","name":"Greenhouse Canopy","deck":0,"stream":"plant","fixtures":6,
+    "overlay": { "walkwayFixtures": 2, "taskFixtures": 1, "maxOverlayFrac": 0.10, "visitorTimersMin": [2,5,10], "overlayCCT_K": 4500 }
+  }
+]

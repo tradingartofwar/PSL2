@@ -1,0 +1,83 @@
+// app/page.tsx
+"use client";
+
+import { HeaderHUD } from "@/components/HeaderHUD";
+import { CrewSidebar } from "@/components/CrewSidebar";
+import { PlantSidebar } from "@/components/PlantSidebar";
+import SpectralWave from "@/components/SpectralWave";
+import { EnergyHUD } from "@/components/EnergyHUD";
+import { Timeline30 } from "@/components/Timeline30";
+import AIStrategistChip from "@/components/AIStrategistChip";
+import { useCockpit } from "@/lib/useCockpit";
+
+export default function Page() {
+  // grab live data (effTod is accelerated when ?fast_tod=1)
+  const { status, humanBands, plantBands, humanMode, plantMode, effTod } = useCockpit();
+
+  // fallbacks while schedule/status load
+  const FALLBACK_HUMAN = [0.2, 0.35, 0.45, 0.25, 0.15, 0.1, 0.2, 0.4, 0.55, 0.7, 0.9, 0.75];
+  const FALLBACK_PLANT = [0.55, 0.75, 0.62, 0.42, 0.32, 0.42, 0.70, 0.85, 0.96, 1.00, 0.98, 0.80];
+
+  // treat zero-filled arrays as "no signal"
+  const hasSignal = (b?: number[]) => Array.isArray(b) && b.some((v) => (v ?? 0) > 1e-3);
+
+  // emphasize helper (multiply by mask, then normalize to max 1.0)
+  const emphasize = (bands: number[], mask: number[]) => {
+    const out = bands.map((v, i) => v * (mask[i] ?? 1));
+    const m = Math.max(...out, 0.0001);
+    return out.map((v) => Math.min(1, v / m));
+  };
+
+  // plant emphasis mask (boost ~460, ~660, ~730; depress green/yellow)
+  const PLANT_MASK = [0.35, 0.55, 1.10, 0.60, 0.25, 0.20, 0.25, 0.45, 0.85, 1.25, 1.00, 1.15];
+
+  const humanToShow = hasSignal(humanBands) ? humanBands : FALLBACK_HUMAN;
+  const plantRaw = hasSignal(plantBands) ? plantBands : FALLBACK_PLANT;
+  const plantToShow = emphasize(plantRaw, PLANT_MASK);
+
+  const kw = status?.energyKw ?? 16.2;
+
+  // timeline inputs (mission day + effective time-of-day)
+  const day = status?.sol ?? 0;
+  const tod = effTod ?? status?.tod ?? 0;
+
+  return (
+    <main className="min-h-screen p-6 bg-[#0A0F14] text-white">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <HeaderHUD />
+
+        <div className="grid grid-cols-12 gap-6">
+          <aside className="col-span-12 md:col-span-3 space-y-6">
+            <CrewSidebar />
+            <PlantSidebar />
+          </aside>
+
+          <section className="col-span-12 md:col-span-6 space-y-6">
+            <SpectralWave
+              title="Circadian Spectrum"
+              mode={humanMode || "WAKE SYNC"}
+              bands={humanToShow}
+              className="h-[160px]"
+            />
+            <SpectralWave
+              title="Growth Spectrum"
+              mode={plantMode || "GROWTH SURGE"}
+              bands={plantToShow}
+              className="h-[160px]"
+            />
+          </section>
+
+          <aside className="col-span-12 md:col-span-3 space-y-6">
+            <EnergyHUD kw={kw} maxKw={24} label="Energy HUD" />
+            <div className="flex items-center justify-center">
+              <AIStrategistChip active />
+            </div>
+          </aside>
+        </div>
+
+        {/* Mission timeline with live CURRENT marker */}
+        <Timeline30 day={day} tod={tod} />
+      </div>
+    </main>
+  );
+}
