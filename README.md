@@ -1,5 +1,7 @@
 # PSL2 Cockpit — Full Setup, Run, and Troubleshooting
 
+if you have any issues, GPT 5 is very familiar with the code - Troy
+
 A monorepo for the PSL2 cockpit: a mission-style UI that renders Circadian (humans) and Growth (plants) spectra, responds to **Edge Decisions** (AI plan deltas), and adapts to the Shackleton site illumination (synodic month) while tracking mission progress.
 
 This README assumes a fresh clone.
@@ -17,13 +19,13 @@ python .\tools\generate_schedule.py --out .\data\mock\daily.json
 # 2) Start backend (dev)
 cd .\backend
 npm install
-npm run dev
+pnpm dlx nodemon --watch src --ext ts --exec "pnpm dlx ts-node --transpile-only src/server.ts"
 # Verify: irm http://localhost:5000/status | ConvertTo-Json -Depth 6
 
 # 3) Start frontend (dev)
 cd ..\frontend
 npm install
-npm run dev
+pnpm run dev   (need to be online for pnpm -otherwise use npm)
 # Open http://localhost:3000 (or 3001 if 3000 is busy)
 # Demo flags: http://localhost:3000/?fast_tod=1&ai=1
 
@@ -100,7 +102,7 @@ GET /health → ok
 Run:
 cd backend
 npm install
-npm run dev
+pnpm dlx nodemon --watch src --ext ts --exec "pnpm dlx ts-node --transpile-only src/server.ts"
 
 Verify endpoints with PowerShell:
 
@@ -115,7 +117,7 @@ Stack: Next.js (App Router) + Tailwind + shadcn/ui + Framer Motion
 Run:
 cd frontend
 npm install
-npm run dev
+pnpm run dev (need to be online for pnpm)
 
 Open http://localhost:3000
  (Next auto-switches to :3001 if busy).
@@ -174,7 +176,7 @@ Use Presence drawer dropdown. Tooltip notes sensors would replace this in realit
 
 Port 3000 busy → Next auto-switches to 3001.
 
-pnpm workspace issues → use npm (npm install, npm run dev).
+pnpm workspace issues → use npm (npm install, npm run dev).  (if offline)
 
 Backend missing deps → cd backend && npm install fastify @fastify/cors.
 
@@ -195,7 +197,3 @@ PRs welcome — keep commits small and update CHANGELOG.md.
 The Edge Decisions chip pulses with activity; rationale comes from /lights/plan.
 For issues, open a GitHub issue with console output + OS/Node versions.
 
-
----
-
-Do you want me to also create a **CHANGELOG entry (v0.7.0)** alongside this so Polaris/Pulse can log Build-7 baseline right away?
